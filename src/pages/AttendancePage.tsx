@@ -1,0 +1,327 @@
+// src/pages/AttendancePage.tsx — /attendance: who is clocked in today, where, their photo, hours and warnings (migration 20260987000000).
+// Supervisors also clock in a crew from their own phone here and set each site's map point ("I am standing on the site").
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { supabase } from "../lib/supabase";
+import { todayLocal } from "../lib/jamaica";
+import {
+  FLAG_WORDS, distanceWords, fetchChecks, fetchShiftsForDay, getFix, hoursWords, mapLink, setRadius, setSite, shrinkPhoto, signedPhotoUrls,
+  staffClockIn, staffClockOut, timeWords, uploadStaffClockPhoto, type StaffShift,
+} from "../lib/attendance";
+
+type Proj = { id: string; name: string; status: string | null; site_lat: number | null; site_lng: number | null; site_radius_m: number | null };
+type Wkr = { id: string; first_name: string | null; last_name: string | null; employee_id: string | null };
+type Check = Awaited<ReturnType<typeof fetchChecks>>[number];
+const RADII = [100, 200, 300, 500, 1000, 2000];
+const ACT_ROLES = ["director", "admin", "supervisor", "site_user"];
+
+const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
+const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
+const input = "rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#111820] px-3 py-2 text-sm text-slate-800 dark:text-slate-200";
+const wname = (w: { first_name: string | null; last_name: string | null } | null) => [w?.first_name, w?.last_name].filter(Boolean).join(" ") || "Worker";
+
+export default function AttendancePage() {
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [role, setRole] = useState("");
+  const [day, setDay] = useState(todayLocal());
+  const [projectId, setProjectId] = useState<string>("all");
+  const [projects, setProjects] = useState<Proj[]>([]);
+  const [workers, setWorkers] = useState<Wkr[]>([]);
+  const [shifts, setShifts] = useState<StaffShift[]>([]);
+  const [photos, setPhotos] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const [checks, setChecks] = useState<Record<string, Check[]>>({});
+  const [modal, setModal] = useState<"crew" | "site" | null>(null);
+  const [tick, setTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const canAct = ACT_ROLES.includes(role);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: p } = await supabase.from("user_profiles").select("company_id, role").eq("id", user.id).maybeSingle();
+      if (!alive || !p?.company_id) return;
+      setCompanyId(p.company_id); setRole(p.role || "");
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let alive = true;
+    (async () => {
+      const [{ data: pr }, { data: wk }] = await Promise.all([
+        supabase.from("projects").select("id,name,status,site_lat,site_lng,site_radius_m").eq("company_id", companyId).order("name"),
+        supabase.from("workers").select("id,first_name,last_name,employee_id").eq("company_id", companyId).eq("status", "active").order("first_name"),
+      ]);
+      if (!alive) return;
+      setProjects((pr || []) as Proj[]); setWorkers((wk || []) as Wkr[]);
+    })();
+    return () => { alive = false; };
+  }, [companyId, tick]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await fetchShiftsForDay(companyId, day, projectId);
+        const urls = await signedPhotoUrls(rows.flatMap((r) => [r.in_photo_path || "", r.out_photo_path || ""]));
+        if (!alive) return;
+        setShifts(rows); setPhotos(urls); setLoading(false);
+      } catch (e) {
+        if (!alive) return;
+        setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [companyId, day, projectId, tick]);
+
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t); }, []);
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+
+  async function toggleRow(id: string) {
+    if (openRow === id) { setOpenRow(null); return; }
+    setOpenRow(id);
+    if (!checks[id]) { const c = await fetchChecks(id).catch(() => []); setChecks((m) => ({ ...m, [id]: c })); }
+  }
+
+  async function clockOutRow(s: StaffShift) {
+    if (!window.confirm(`Clock out ${wname(s.workers)} now?`)) return;
+    try {
+      const fix = await getFix();
+      await staffClockOut(s.id, fix, "Clocked out by supervisor");
+      setMsg({ ok: true, text: `${wname(s.workers)} is clocked out.` }); reload();
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not clock out." }); }
+  }
+
+  const minutesOf = (s: StaffShift) => s.status === "open" ? Math.max(0, Math.floor((now - new Date(s.clock_in_at).getTime()) / 60000)) : (s.minutes_worked || 0);
+  const stats = useMemo(() => ({
+    onSite: shifts.filter((s) => s.status === "open").length,
+    people: new Set(shifts.map((s) => s.worker_id)).size,
+    minutes: shifts.reduce((t, s) => t + minutesOf(s), 0),
+    warnings: shifts.filter((s) => s.flags.length > 0).length,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [shifts, now]);
+  const noPin = projects.filter((p) => p.status !== "completed" && p.status !== "cancelled" && p.status !== "archived" && p.site_lat == null);
+
+  return (
+    <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Clock In</h1>
+          <p className="text-xs text-slate-500">Who is on site, where they clocked in, their photo and hours. Workers clock in from the worker portal on their phone.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canAct && <button onClick={() => setModal("crew")} className={`${btn} bg-green-600 hover:bg-green-500 text-white`}>▶ Clock in crew</button>}
+          {canAct && <button onClick={() => setModal("site")} className={`${btn} bg-blue-600 hover:bg-blue-500 text-white`}>📍 Set site location</button>}
+          <button onClick={reload} className={`${btn} border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300`}>Refresh</button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <input type="date" value={day} max={todayLocal()} onChange={(e) => e.target.value && setDay(e.target.value)} className={input} />
+        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={input}>
+          <option value="all">All projects</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+
+      {msg && <div className={`rounded-lg border px-4 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}</div>}
+      {canAct && noPin.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          📍 No site location yet for: {noPin.map((p) => p.name).join(", ")}. Until it is set, the phone can't tell if a worker is on that site. Tap "Set site location" while standing on the site.
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          ["🟢 On site now", String(stats.onSite)],
+          ["👷 People today", String(stats.people)],
+          ["⏱ Hours today", hoursWords(stats.minutes)],
+          ["⚠️ With warnings", String(stats.warnings)],
+        ].map(([l, v]) => <div key={l} className={`${card} p-3`}><div className="text-xs text-slate-500">{l}</div><div className="text-lg font-bold text-slate-900 dark:text-slate-100">{v}</div></div>)}
+      </div>
+
+      {loading ? <div className="text-sm text-slate-500">Loading…</div> : shifts.length === 0 ? (
+        <div className={`${card} p-6 text-center text-sm text-slate-500`}>Nobody clocked in on this day.</div>
+      ) : (
+        <div className="space-y-2">
+          {shifts.map((s) => {
+            const inMap = mapLink(s.in_lat, s.in_lng), outMap = mapLink(s.out_lat, s.out_lng);
+            const far = s.flags.includes("in_far") || s.flags.includes("out_far") || s.flags.includes("left_site");
+            return (
+              <div key={s.id} className={`${card} p-3`}>
+                <div className="flex gap-3">
+                  {s.in_photo_path && photos[s.in_photo_path]
+                    ? <a href={photos[s.in_photo_path]} target="_blank" rel="noreferrer"><img src={photos[s.in_photo_path]} alt={`${wname(s.workers)} at clock in`} className="h-16 w-16 rounded-lg object-cover" /></a>
+                    : <div className="h-16 w-16 rounded-lg bg-slate-100 dark:bg-white/[0.05] flex items-center justify-center text-2xl">👷</div>}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-slate-900 dark:text-slate-100">{wname(s.workers)}</span>
+                      {s.workers?.employee_id && <span className="font-mono text-xs text-slate-500">{s.workers.employee_id}</span>}
+                      {s.status === "open"
+                        ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">🟢 On the clock</span>
+                        : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Done</span>}
+                      {far && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">⚠️ Away from site</span>}
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-400">{s.projects?.name || "No project"}</div>
+                    <div className="text-sm text-slate-700 dark:text-slate-300">
+                      In {timeWords(s.clock_in_at)}{s.in_distance_m != null && ` (${distanceWords(s.in_distance_m)} from site)`}
+                      {" · "}{s.status === "open" ? "still working" : <>Out {timeWords(s.clock_out_at)}{s.out_distance_m != null && ` (${distanceWords(s.out_distance_m)} from site)`}</>}
+                      {" · "}<b>{hoursWords(minutesOf(s))}</b>{s.status === "closed" && s.paid_until && s.clock_out_at && s.paid_until !== s.clock_out_at && <span className="text-amber-700"> (counted up to {timeWords(s.paid_until)})</span>}
+                    </div>
+                    {s.flags.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{s.flags.map((f) => <span key={f} className="rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-xs text-amber-900">{FLAG_WORDS[f] || f}</span>)}</div>}
+                    {s.clocked_in_by && <div className="text-xs text-slate-500">Clocked in by a supervisor</div>}
+                    {s.note && <div className="text-xs text-slate-500">Note: {s.note}</div>}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {inMap && <a href={inMap} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-600 underline">📍 Clock in on map</a>}
+                      {outMap && <a href={outMap} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-600 underline">📍 Clock out on map</a>}
+                      <button onClick={() => void toggleRow(s.id)} className="text-xs font-semibold text-slate-600 underline">{openRow === s.id ? "Hide site checks" : "Site checks"}</button>
+                      {canAct && s.status === "open" && <button onClick={() => void clockOutRow(s)} className="text-xs font-semibold text-red-600 underline">Clock out now</button>}
+                    </div>
+                    {openRow === s.id && (
+                      <div className="mt-2 rounded-lg bg-slate-50 dark:bg-white/[0.03] p-2 text-xs text-slate-700 dark:text-slate-300 space-y-0.5">
+                        {(checks[s.id] || []).length === 0 ? "No checks." : (checks[s.id] || []).map((c, i) => (
+                          <div key={i}>{timeWords(c.checked_at)} · {c.kind === "clock_in" ? "Clock in" : c.kind === "clock_out" ? "Clock out" : c.kind === "answer" ? "Answered ✋" : c.kind === "missed" ? "Asked \"on site?\"" : "Check"} · {
+                            c.kind === "missed" ? "❌ no answer" : c.on_site === true ? "✅ on site" : c.on_site === false ? `⚠️ ${distanceWords(c.distance_m)} away` : c.lat == null ? "no location" : "not sure"}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modal === "crew" && companyId && <CrewModal companyId={companyId} projects={projects} workers={workers} busyIds={shifts.filter((s) => s.status === "open").map((s) => s.worker_id)}
+        onClose={() => { setModal(null); reload(); }} />}
+      {modal === "site" && <SiteModal projects={projects} onClose={() => { setModal(null); reload(); }} />}
+    </div>
+  );
+}
+
+function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#0f151c] p-4 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between"><h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h2><button onClick={onClose} className="text-2xl text-slate-500" aria-label="Close">×</button></div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// A supervisor clocks in workers who have no smartphone: one at a time, with a photo of each person.
+function CrewModal({ companyId, projects, workers, busyIds, onClose }: { companyId: string; projects: Proj[]; workers: Wkr[]; busyIds: string[]; onClose: () => void }) {
+  const open = projects.filter((p) => !["completed", "cancelled", "archived"].includes(p.status || ""));
+  const [projectId, setProjectId] = useState(open.length === 1 ? open[0].id : "");
+  const [workerId, setWorkerId] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [done, setDone] = useState<string[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const taken = new Set([...busyIds, ...done]);
+  const left = workers.filter((w) => !taken.has(w.id));
+
+  async function go(file: File | null) {
+    if (!projectId || !workerId) { setErr("Pick the project and the worker."); return; }
+    setErr(null);
+    try {
+      let photo: string | null = null;
+      if (file) { setBusy("Saving the photo…"); photo = await uploadStaffClockPhoto(companyId, workerId, await shrinkPhoto(file)); }
+      setBusy("Finding where you are…");
+      const fix = await getFix();
+      setBusy("Clocking in…");
+      const r = await staffClockIn(workerId, projectId, fix, photo);
+      setDone((d) => [...d, workerId]);
+      const w = workers.find((x) => x.id === workerId);
+      setErr(r.status === "off_site" ? `${wname(w || null)} is clocked in, but your phone is ${distanceWords(r.distance_m)} from the site.` : null);
+      setWorkerId("");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not clock in."); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <Shell title="Clock in crew" onClose={onClose}>
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; if (f) void go(f); }} />
+      <p className="text-sm text-slate-600 dark:text-slate-400">For workers with no smartphone. Your phone's location is used, so stand on the site. Take a photo of each worker.</p>
+      <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={`${input} w-full`}>
+        <option value="">Pick the project…</option>
+        {open.map((p) => <option key={p.id} value={p.id}>{p.name}{p.site_lat == null ? " (site location not set)" : ""}</option>)}
+      </select>
+      <select value={workerId} onChange={(e) => setWorkerId(e.target.value)} className={`${input} w-full`}>
+        <option value="">Pick the worker…</option>
+        {left.map((w) => <option key={w.id} value={w.id}>{wname(w)}{w.employee_id ? ` · ${w.employee_id}` : ""}</option>)}
+      </select>
+      {err && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</div>}
+      {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : (<>
+        <button onClick={() => { if (!projectId || !workerId) { setErr("Pick the project and the worker."); return; } fileRef.current?.click(); }}
+          className={`${btn} w-full min-h-[56px] bg-green-600 hover:bg-green-500 text-white text-base`}>📷 Take their photo and clock in</button>
+        <button onClick={() => void go(null)} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Clock in without a photo</button>
+      </>)}
+      {done.length > 0 && <div className="text-sm text-green-700">✅ Clocked in: {done.map((id) => wname(workers.find((w) => w.id === id) || null)).join(", ")}</div>}
+      <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Done</button>
+    </Shell>
+  );
+}
+
+function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => void }) {
+  const open = projects.filter((p) => !["completed", "cancelled", "archived"].includes(p.status || ""));
+  const [projectId, setProjectId] = useState(open.length === 1 ? open[0].id : "");
+  const p = open.find((x) => x.id === projectId);
+  const [radius, setRad] = useState<number>(300);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function pick(id: string) {
+    setProjectId(id); setNote(null);
+    const pr = open.find((x) => x.id === id);
+    setRad(pr?.site_radius_m || 300);
+  }
+  async function saveHere() {
+    if (!projectId) { setNote({ ok: false, text: "Pick the project." }); return; }
+    setBusy(true); setNote(null);
+    const fix = await getFix(30000);
+    if (!fix) { setBusy(false); setNote({ ok: false, text: "The phone could not find where you are. Turn on Location and try again." }); return; }
+    try {
+      await setSite(projectId, fix, radius);
+      setNote({ ok: true, text: fix.accuracy > 100
+        ? `Saved, but the phone was only sure to ${fix.accuracy} m. For a better point, step outside, wait a minute and save again.`
+        : `Saved. Workers within ${distanceWords(radius)} of this spot are "on site".` });
+    } catch (e) { setNote({ ok: false, text: e instanceof Error ? e.message : "Could not save." }); }
+    setBusy(false);
+  }
+  async function saveRadius() {
+    if (!projectId) return;
+    setBusy(true);
+    try { await setRadius(projectId, radius); setNote({ ok: true, text: `Site distance is now ${distanceWords(radius)}.` }); }
+    catch (e) { setNote({ ok: false, text: e instanceof Error ? e.message : "Could not save." }); }
+    setBusy(false);
+  }
+
+  return (
+    <Shell title="Set site location" onClose={onClose}>
+      <p className="text-sm text-slate-600 dark:text-slate-400">Stand in the middle of the site with your phone, then tap the blue button.</p>
+      <select value={projectId} onChange={(e) => pick(e.target.value)} className={`${input} w-full`}>
+        <option value="">Pick the project…</option>
+        {open.map((x) => <option key={x.id} value={x.id}>{x.name}{x.site_lat == null ? " (not set)" : " ✓"}</option>)}
+      </select>
+      {p && p.site_lat != null && <a href={mapLink(p.site_lat, p.site_lng) || "#"} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline">See the saved site point on the map</a>}
+      <label className="block text-sm text-slate-700 dark:text-slate-300">How far from that spot still counts as "on site"?
+        <select value={radius} onChange={(e) => setRad(Number(e.target.value))} className={`${input} mt-1 w-full`}>
+          {RADII.map((r) => <option key={r} value={r}>{distanceWords(r)}{r === 300 ? " (normal)" : r >= 1000 ? " (big site: farm, road)" : ""}</option>)}
+        </select>
+      </label>
+      {note && <div className={`rounded-lg border px-3 py-2 text-sm ${note.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{note.text}</div>}
+      <button onClick={() => void saveHere()} disabled={busy} className={`${btn} w-full min-h-[56px] bg-blue-600 hover:bg-blue-500 text-white text-base`}>{busy ? "⏳ Finding where you are…" : "📍 I am on the site now. Save this spot"}</button>
+      {p && p.site_lat != null && <button onClick={() => void saveRadius()} disabled={busy} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Only change the distance</button>}
+      <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Done</button>
+    </Shell>
+  );
+}

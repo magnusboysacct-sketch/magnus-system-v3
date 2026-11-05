@@ -1,0 +1,260 @@
+// src/components/WorkerClock.tsx — the big Clock in / Clock out card at the top of the worker portal (migration 20260987000000).
+// Made for workers who find reading hard: two big coloured buttons with pictures, the phone speaks every step, very few words.
+// Clock in = selfie (camera) + where the phone is. While clocked in and this page is open, the phone checks every 10 minutes that the
+// worker is still on site; leaving the site clocks them out (the server decides, after two off-site checks 3 minutes apart).
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  clockAnswer, clockCheck, clockIn, clockMissed, clockOut, clockState, distanceWords, getFix, hoursWords, setVoiceOn, shrinkPhoto, speak, timeWords, uploadClockPhoto, voiceOn,
+  type ClockResult, type ClockState,
+} from "../lib/attendance";
+
+type Banner = { kind: "good" | "warn" | "bad"; icon: string; text: string } | null;
+const CHECK_EVERY_MS = 10 * 60 * 1000;
+// "Are you still on site?" a few times a day, at a random time 60 to 120 minutes apart; 15 minutes to answer.
+const ASK_MIN_MS = 60 * 60 * 1000, ASK_SPREAD_MS = 60 * 60 * 1000, ANSWER_MS = 15 * 60 * 1000;
+const nextAsk = () => Date.now() + ASK_MIN_MS + Math.floor(Math.random() * ASK_SPREAD_MS);
+function buzz() { try { navigator.vibrate?.([400, 200, 400, 200, 400]); } catch { /* no buzz on this phone */ } }
+
+function sayTime(iso: string) { return timeWords(iso).replace(":00", " o'clock"); }
+
+export default function WorkerClock({ token, onSessionEnded }: { token: string; onSessionEnded: () => void }) {
+  const [st, setSt] = useState<ClockState | null>(null);
+  const [projectId, setProjectId] = useState<string>("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [voice, setVoice] = useState(voiceOn());
+  const [askedCamera, setAskedCamera] = useState(false);
+  const [confirmOut, setConfirmOut] = useState(false);
+  const [noGps, setNoGps] = useState(false);
+  const [askSince, setAskSince] = useState<number | null>(null);     // when "Are you still on site?" went up
+  const askAt = useRef<number>(nextAsk());
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await clockState(token);
+      if (!s) { onSessionEnded(); return; }
+      setSt(s);
+      setProjectId((p) => p || s.open?.project_id || s.last_project_id || (s.projects.length === 1 ? s.projects[0].id : ""));
+    } catch (e) {
+      setBanner({ kind: "bad", icon: "📶", text: e instanceof Error ? e.message : "No connection. Try again." });
+    }
+  }, [token, onSessionEnded]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
+
+  const open = st?.open ?? null;
+
+  // what a site check says
+  const handleCheck = useCallback((r: ClockResult) => {
+    if (r.status === "on_site") { setNoGps(false); setBanner({ kind: "good", icon: "✅", text: "You are on the site." }); }
+    else if (r.status === "off_site") {
+      setBanner({ kind: "warn", icon: "⚠️", text: `You are ${distanceWords(r.distance_m)} from the site. Go back to the site or you will be clocked out.` });
+      speak("You are outside the site. Go back to the site, or you will be clocked out.");
+    } else if (r.status === "clocked_out") {
+      setBanner({ kind: "bad", icon: "🚶", text: "You left the site, so you were clocked out." });
+      speak("You left the site. You are clocked out.");
+      void refresh();
+    } else if (r.status === "no_location") { setNoGps(true); }
+    else if (r.status === "no_shift") { void refresh(); }
+    else if (r.status === "no_session") { onSessionEnded(); }
+  }, [refresh, onSessionEnded]);
+
+  // the 10-minute site checks while this page is open
+  useEffect(() => {
+    if (!open) return;
+    let stop = false;
+    const run = async () => {
+      if (document.visibilityState !== "visible") return;
+      const fix = await getFix(15000);
+      if (stop) return;
+      try { handleCheck(await clockCheck(token, fix)); } catch { /* no signal: next time */ }
+    };
+    const t = setInterval(run, CHECK_EVERY_MS);
+    const onVis = () => { if (document.visibilityState === "visible") void run(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [open, token, handleCheck]);
+
+  // "Are you still on site?": time to ask, and no answer in 15 minutes
+  useEffect(() => {
+    if (!open) { setAskSince(null); return; }
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;     // asked when the page is looked at again
+      const n = Date.now();
+      if (askSince == null && n >= askAt.current) {
+        setAskSince(n); buzz(); speak("Are you still on the site? Tap the yellow button.");
+      } else if (askSince != null && n - askSince >= ANSWER_MS) {
+        setAskSince(null); askAt.current = nextAsk();
+        void clockMissed(token).catch(() => { /* no signal */ });
+        setBanner({ kind: "warn", icon: "❓", text: "You did not answer \"Are you on site?\". The office will see this." });
+      } else if (askSince != null && (n - askSince) % (5 * 60 * 1000) < 30000) {
+        buzz(); speak("Tap the yellow button.");                // remind every 5 minutes
+      }
+    }, 30000);
+    return () => clearInterval(t);
+  }, [open, askSince, token]);
+
+  async function answerAsk() {
+    setAskSince(null); askAt.current = nextAsk();
+    setBusy("Checking where you are…");
+    try { const fix = await getFix(15000); handleCheck(await clockAnswer(token, fix)); if (fix) speak("Thank you."); }
+    catch { setBanner({ kind: "warn", icon: "📶", text: "No signal. Your answer was not sent." }); }
+    finally { setBusy(null); }
+  }
+
+  function toggleVoice() { const v = !voice; setVoiceOn(v); setVoice(v); if (v) speak("Voice is on."); }
+
+  // CLOCK IN: the tap opens the camera straight away (a phone only opens it from a tap)
+  function pressClockIn() {
+    if (!projectId) { speak("First, tap the site you are working on."); setBanner({ kind: "warn", icon: "👆", text: "First, tap the site you are working on." }); return; }
+    setBanner(null);
+    speak("Take a picture of your face.");
+    setAskedCamera(true);
+    fileRef.current?.click();
+  }
+
+  async function doClockIn(file: File | null) {
+    try {
+      let photo: string | null = null;
+      if (file) { setBusy("Saving your picture…"); photo = await uploadClockPhoto(token, await shrinkPhoto(file)); }
+      setBusy("Finding where you are…");
+      const fix = await getFix();
+      setNoGps(!fix);
+      setBusy("Clocking you in…");
+      const r = await clockIn(token, projectId, fix, photo);
+      const at = sayTime(new Date().toISOString());
+      if (r.status === "on_site") {
+        setBanner({ kind: "good", icon: "✅", text: "You are clocked in. You are on the site." });
+        speak(`You are clocked in at ${at}. Have a good day.`);
+      } else if (r.status === "off_site") {
+        setBanner({ kind: "warn", icon: "⚠️", text: `You are clocked in, but you are ${distanceWords(r.distance_m)} from the site. The office will see this.` });
+        speak(`You are clocked in, but you are not on the site. The office will see this.`);
+      } else if (r.status === "no_location") {
+        setBanner({ kind: "warn", icon: "📍", text: "You are clocked in, but the phone could not find where you are. Turn on Location." });
+        speak("You are clocked in. Please turn on location on your phone.");
+      } else {
+        setBanner({ kind: "good", icon: "✅", text: "You are clocked in." });
+        speak(`You are clocked in at ${at}.`);
+      }
+      if (!photo && file) setBanner({ kind: "warn", icon: "📷", text: "You are clocked in, but the picture did not save." });
+      await refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not clock in. Try again.";
+      setBanner({ kind: "bad", icon: "❌", text: msg });
+      speak("That did not work. Try again.");
+    } finally { setBusy(null); setAskedCamera(false); }
+  }
+
+  async function pressClockOut() {
+    if (!confirmOut) {
+      setConfirmOut(true); speak("Tap the red button again to clock out.");
+      setTimeout(() => setConfirmOut(false), 6000);
+      return;
+    }
+    setConfirmOut(false);
+    try {
+      setBusy("Finding where you are…");
+      const fix = await getFix();
+      setBusy("Clocking you out…");
+      const s = await clockOut(token, fix, null);
+      const worked = hoursWords(s.minutes_worked);
+      if (s.flags.includes("out_far")) {
+        setBanner({ kind: "warn", icon: "⚠️", text: `You are clocked out away from the site. Time counted: ${worked}.` });
+        speak(`You are clocked out. You were not on the site, so the time stops when you left.`);
+      } else {
+        setBanner({ kind: "good", icon: "👋", text: `You are clocked out. You worked ${worked} today.` });
+        speak(`You are clocked out. You worked ${worked.replace("hrs", "hours").replace("hr", "hour").replace("min", "minutes")}. Thank you.`);
+      }
+      await refresh();
+    } catch (e) {
+      setBanner({ kind: "bad", icon: "❌", text: e instanceof Error ? e.message : "Could not clock out. Try again." });
+      speak("That did not work. Try again.");
+    } finally { setBusy(null); }
+  }
+
+  if (!st) return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-xl text-slate-500">Loading the clock…</div>;
+
+  const workedMin = open ? Math.max(0, Math.floor((now - new Date(open.clock_in_at).getTime()) / 60000)) : 0;
+  const bannerStyle = banner?.kind === "good" ? "border-green-300 bg-green-50 text-green-900" : banner?.kind === "warn" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-red-300 bg-red-50 text-red-900";
+  const doneToday = st.today.reduce((s, x) => s + (x.minutes_worked || 0), 0);
+
+  return (
+    <section className="rounded-3xl border-2 border-slate-200 bg-white p-4 space-y-4" aria-label="Clock in and out">
+      <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; if (f) void doClockIn(f); }} />
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-slate-900">⏰ Clock</h2>
+        <button onClick={toggleVoice} aria-label={voice ? "Turn voice off" : "Turn voice on"} className="min-h-[48px] min-w-[48px] rounded-xl border-2 border-slate-300 text-2xl">{voice ? "🔊" : "🔇"}</button>
+      </div>
+
+      {banner && <div role="status" className={`rounded-2xl border-2 px-4 py-3 text-xl font-semibold ${bannerStyle}`}><span className="mr-2 text-2xl">{banner.icon}</span>{banner.text}</div>}
+      {noGps && (
+        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 px-4 py-3 text-lg text-blue-900">
+          <div className="text-2xl">📍 ➜ ⚙️ ➜ 🟢</div>
+          Turn on <b>Location</b> on your phone, and let this page use it.
+        </div>
+      )}
+      {busy && <div className="rounded-2xl bg-slate-100 px-4 py-4 text-center text-xl font-semibold text-slate-700">⏳ {busy}</div>}
+
+      {!open ? (<>
+        {st.projects.length === 0 ? <p className="text-lg text-slate-600">There is no open site to clock in to. Ask the office.</p> : (
+          <div className="space-y-2">
+            <div className="text-lg font-semibold text-slate-700">👷 Where are you working?</div>
+            {st.projects.map((p) => (
+              <button key={p.id} onClick={() => { setProjectId(p.id); speak(p.name); }}
+                className={`w-full min-h-[60px] rounded-2xl border-2 px-4 text-left text-xl font-semibold ${projectId === p.id ? "border-green-600 bg-green-50 text-green-900" : "border-slate-300 text-slate-800"}`}>
+                {projectId === p.id ? "✅ " : "⬜ "}{p.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <button onClick={pressClockIn} disabled={!!busy || st.projects.length === 0}
+          className="w-full min-h-[110px] rounded-3xl bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:opacity-50 text-white shadow-lg">
+          <div className="text-5xl leading-none">▶️</div>
+          <div className="mt-1 text-3xl font-extrabold tracking-wide">CLOCK IN</div>
+          <div className="text-lg opacity-90">📷 picture of your face</div>
+        </button>
+        {askedCamera && !busy && (
+          <button onClick={() => void doClockIn(null)} className="w-full min-h-[52px] rounded-2xl border-2 border-slate-300 text-lg text-slate-700">Camera not working? Clock in without a picture</button>
+        )}
+      </>) : (<>
+        {askSince != null && (
+          <button onClick={() => void answerAsk()} disabled={!!busy}
+            className="w-full min-h-[120px] rounded-3xl bg-yellow-400 hover:bg-yellow-300 active:bg-yellow-500 text-slate-900 shadow-lg animate-pulse">
+            <div className="text-5xl leading-none">✋</div>
+            <div className="mt-1 text-3xl font-extrabold">I'M HERE</div>
+            <div className="text-lg">Are you still on the site? Tap here.</div>
+          </button>
+        )}
+        <div className="rounded-3xl bg-green-50 border-2 border-green-300 p-5 text-center">
+          <div className="text-lg font-semibold text-green-900">🟢 Working at {open.project || "the site"}</div>
+          <div className="mt-1 text-5xl font-extrabold text-green-800 tabular-nums">{hoursWords(workedMin)}</div>
+          <div className="text-lg text-green-900">since {timeWords(open.clock_in_at)}</div>
+        </div>
+        <p className="text-base text-slate-600">📱 Keep this page open while you work. The phone checks that you are on the site every 10 minutes. If you leave the site, you are clocked out. Sometimes the phone buzzes and asks "Are you still on site?": tap the yellow button.</p>
+        <button onClick={() => void pressClockOut()} disabled={!!busy}
+          className={`w-full min-h-[110px] rounded-3xl text-white shadow-lg disabled:opacity-50 ${confirmOut ? "bg-red-800 ring-4 ring-red-300" : "bg-red-600 hover:bg-red-500 active:bg-red-700"}`}>
+          <div className="text-5xl leading-none">⏹️</div>
+          <div className="mt-1 text-3xl font-extrabold tracking-wide">{confirmOut ? "TAP AGAIN" : "CLOCK OUT"}</div>
+          {confirmOut && <div className="text-lg opacity-90">to finish for today</div>}
+        </button>
+      </>)}
+
+      {st.today.length > 0 && (
+        <div className="rounded-2xl bg-slate-50 p-3">
+          <div className="text-lg font-semibold text-slate-700">Today: {hoursWords(doneToday)}</div>
+          {st.today.map((x) => (
+            <div key={x.id} className="flex justify-between text-base text-slate-600">
+              <span>{timeWords(x.clock_in_at)} – {timeWords(x.clock_out_at)} · {x.project}</span>
+              <span>{x.out_method === "left_site" ? "🚶 left site" : hoursWords(x.minutes_worked)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

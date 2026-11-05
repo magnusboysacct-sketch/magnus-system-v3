@@ -1,0 +1,1559 @@
+expense_date,vendor,amount,paid_through,description
+2024-01-23,Cool Oasis,5000.000,Undeposited Funds,Enron Gas — Cool Oasis
+2024-01-31,Zoho,30194.000,Undeposited Funds,Software — Zoho
+2024-01-28,CARL SIMPSON,18000.000,Undeposited Funds,Tool And Equipment Rental — CARL SIMPSON
+2024-01-28,Mark Ramanand,6000.000,Undeposited Funds,Construction Materials — Mark Ramanand
+2024-01-24,,2595.550,Undeposited Funds,Books
+2024-01-30,First Class Hardware,3835.000,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-04,,600.000,Undeposited Funds,Repairs and Maintenance
+2024-01-26,,9000.000,Undeposited Funds,Enron Gas
+2024-01-28,Mark Ramanand,1460.000,Undeposited Funds,Construction Materials — Mark Ramanand
+2024-02-02,,7000.000,Undeposited Funds,Enron Gas
+2024-02-04,First Class Hardware,7498.930,Undeposited Funds,Construction Materials — First Class Hardware
+2024-01-27,,15214.990,Undeposited Funds,Construction Materials
+2024-01-22,,7000.000,Undeposited Funds,Enron Gas
+2024-01-24,,350.000,Undeposited Funds,Highway Toll
+2024-01-25,First Class Hardware,1390.000,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-04,Fesco Bodles,7000.000,Undeposited Funds,Enron Gas — Fesco Bodles
+2024-01-23,Tank Weld Metals,59026.050,Undeposited Funds,Construction Materials — Tank Weld Metals
+2024-01-23,First Class Hardware,4499.720,Undeposited Funds,Construction Materials — First Class Hardware
+2024-01-27,,3420.870,Undeposited Funds,Construction Materials
+2024-01-24,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2023-12-24,Highway 2000,610.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-01-22,Highway 2000,350.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-01-29,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-02-02,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-01-22,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-01-23,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-02-04,Home Boy's,86000.000,Undeposited Funds,Mixer
+2024-02-04,Home Boy's,86000.000,Undeposited Funds,6 Labor Worker
+2024-02-04,Home Boy's,86000.000,Undeposited Funds,Delivery
+2024-02-05,,7000.000,Undeposited Funds,Enron Gas
+2024-02-05,Highway 2000,960.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-02-05,Highway 2000,10000.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-02-07,,3000.000,Undeposited Funds,Enron Gas
+2024-02-06,First Class Hardware,2369.970,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-08,First Class Hardware,2400.020,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-07,Shoppers Delite,2237.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-02-09,,7000.000,Undeposited Funds,Enron Gas
+2024-02-10,GoDaddy,22.160,Undeposited Funds,Software — GoDaddy
+2024-02-12,First Class Hardware,4025.590,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-05,,465.250,Undeposited Funds,Books
+2024-02-05,,7000.000,Undeposited Funds,Enron Gas
+2024-02-12,First Class Hardware,9597.900,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-13,,2965.000,Undeposited Funds,Meals and Entertainment
+2024-02-15,First Class Hardware,2293.020,Undeposited Funds,Construction Materials — First Class Hardware
+2024-02-19,,2259.990,Undeposited Funds,Construction Materials
+2024-02-14,,2000.000,Undeposited Funds,Enron Gas
+2024-02-12,,7140.000,Undeposited Funds,Meals and Entertainment
+2024-02-15,,15000.000,Undeposited Funds,Enron Gas
+2024-02-15,First Class Hardware,3800.000,Undeposited Funds,Cost of Goods Sold — First Class Hardware
+2024-02-22,,5000.000,Undeposited Funds,Enron Gas
+2024-02-20,Shoppers Delite,203.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-02-20,,1754.000,Undeposited Funds,Meals and Entertainment
+2024-02-19,,12350.000,Undeposited Funds,goods was purchased from a chinese store
+2024-02-19,Shoppers Delite,4053.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-02-21,realible gas,4600.000,Undeposited Funds,Meals and Entertainment — realible gas
+2024-02-22,Shoppers Delite,597.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-02-20,Mackville Total service station,7000.000,Undeposited Funds,Enron Gas — Mackville Total service station
+2024-02-19,Shoppers Delite,2801.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-02-20,First Class Hardware,7159.950,Undeposited Funds,Mason Tools — First Class Hardware
+2024-02-23,,60000.000,Enron Petty Cash,Office Equiqmen
+2024-02-05,Highway 2000,10000.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-02-05,Highway 2000,960.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-02-25,,5000.000,Undeposited Funds,Enron Gas
+2024-02-27,,7000.000,Undeposited Funds,Enron Gas
+2024-02-27,,8908.000,Enron Petty Cash,foods
+2024-02-27,Shoppers Delite,228.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-02-27,Shoppers Delite,289.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-28,Shoppers Delite,986.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-29,Shoppers Delite,2632.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-02,,5000.000,Enron Petty Cash,Enron Gas
+2024-03-02,,3550.000,Enron Petty Cash,Tools Expense
+2024-03-04,,10000.000,Enron Petty Cash,Purchase gas
+2024-03-06,Shoppers Delite,81.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-03-05,Shoppers Delite,745.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-02-29,,38500.000,Enron Petty Cash,insurance
+2024-03-04,,2850.000,Undeposited Funds,food purchase
+2024-03-04,,12150.000,Undeposited Funds,food purchase
+2024-03-04,Shoppers Delite,6133.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-03-07,Shoppers Delite,2040.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-03-06,Shoppers Delite,4664.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-03-07,Shoppers Delite,486.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-03-08,Shoppers Delite,560.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-03-08,,3000.000,Undeposited Funds,Enron Gas
+2024-03-09,W&B ENTERPRISE,712.000,Undeposited Funds,Meals and Entertainment — W&B ENTERPRISE
+2024-03-09,W&B ENTERPRISE,712.000,Undeposited Funds,Meals and Entertainment — W&B ENTERPRISE
+2024-03-11,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-03-11,Highway 2000,350.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-03-02,,300000.000,Undeposited Funds,"$400,000 Was deposit for this property before the company started and $300000 is form the company"
+2024-03-11,First Class Hardware,599.990,Enron Reimbursement,Construction Materials — First Class Hardware
+2024-03-11,Shoppers Delite,129.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-11,Shoppers Delite,7577.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-11,Shoppers Delite,1107.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-10,W&B ENTERPRISE,400.000,Undeposited Funds,Meals and Entertainment — W&B ENTERPRISE
+2024-03-12,Shoppers Delite,4591.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-12,Shoppers Delite,1084.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-12,First Class Hardware,6600.190,Undeposited Funds,Construction Materials — First Class Hardware
+2024-03-11,Shoppers Delite,7577.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-11,Shoppers Delite,1107.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-11,First Class Hardware,599.990,Enron Reimbursement,Construction Materials — First Class Hardware
+2024-03-11,Shoppers Delite,129.000,Enron Reimbursement,Meals and Entertainment — Shoppers Delite
+2024-03-13,Shoppers Delite,2351.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-13,Shoppers Delite,1483.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-13,Shoppers Delite,745.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-13,,3100.000,Enron Petty Cash,Meals and Entertainment
+2024-03-13,,99.990,Enron Petty Cash,Meals and Entertainment
+2024-03-14,Shoppers Delite,638.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-11,,10000.000,Enron Reimbursement,Enron Gas
+2024-03-04,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2024-03-20,Highway 2000,350.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-03-18,,5000.000,Petty Cash,Enron Gas
+2024-03-19,Shoppers Delite,5242.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-19,Mackville Total service station,10000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-03-14,,1290.000,Enron Petty Cash,Meals and Entertainment
+2024-03-14,Shoppers Delite,3720.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-20,Highway 2000,10000.000,Petty Cash,Highway Toll — Highway 2000
+2024-03-21,Highway 2000,1500.000,Petty Cash,Highway Toll — Highway 2000
+2024-03-21,Shoppers Delite,2790.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-22,Shoppers Delite,2790.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-22,,1250.000,Petty Cash,Telephone Expense
+2024-03-22,,1250.000,Petty Cash,Telephone Expense
+2024-03-22,,1250.000,Petty Cash,Telephone Expense
+2024-03-22,,1250.000,Petty Cash,Telephone Expense
+2024-03-22,,3000.000,Petty Cash,Enron Gas
+2024-03-23,W&B ENTERPRISE,4230.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-03-27,First Class Hardware,2090.000,Petty Cash,Hand Tools — First Class Hardware
+2024-03-27,Shoppers Delite,1763.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-28,,620.000,Petty Cash,Meals and Entertainment
+2024-03-26,,8750.000,Petty Cash,Enron Gas
+2024-03-28,Shoppers Delite,1953.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-03-29,,7000.000,Petty Cash,Enron Gas
+2024-03-29,,10856.520,Enron Petty Cash,Meals and Entertainment
+2024-03-29,,4800.000,Enron Petty Cash,Enron Gas
+2024-03-29,,8105.870,Enron Petty Cash,Meals and Entertainment
+2024-03-13,,26910.000,Undeposited Funds,Construction Materials
+2024-03-13,,1667.220,Undeposited Funds,Construction Materials
+2024-03-28,,8020.860,Veron Petty Cash,Hand Tools
+2024-03-20,,4508.320,Veron Petty Cash,Hand Tools
+2024-04-01,,8000.000,Petty Cash,Enron Gas
+2024-04-02,Highway 2000,1000.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-02,Highway 2000,5000.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-02,Shoppers Delite,1589.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-02,Mackville Total service station,6000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-04-02,,16200.000,Petty Cash,Laptop Backpack and Wireless Mouse
+2024-04-03,,4000.000,Petty Cash,Enron Gas
+2024-04-03,,2800.000,Petty Cash,lunch
+2024-04-05,Mackville Total service station,10000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-04-06,,25000.000,Current Account JMD,Meals and Entertainment
+2024-04-05,,190.000,Petty Cash,Meals and Entertainment
+2024-04-05,,620.000,Petty Cash,Meals and Entertainment
+2024-04-04,Shoppers Delite,2228.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-05,Shoppers Delite,1132.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-09,,31032.420,Enron Petty Cash,Construction Materials
+2024-04-08,,9095.360,Petty Cash,Construction Materials
+2024-04-06,W&B ENTERPRISE,6200.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-04-15,Shoppers Delite,1494.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-15,,10000.000,Petty Cash,Enron Gas
+2024-04-15,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-16,,8050.000,Petty Cash,Construction Materials
+2024-04-15,Shoppers Delite,10063.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-14,,5000.000,Petty Cash,Enron Gas
+2024-04-15,Highway 2000,2000.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-15,Highway 2000,5000.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-20,,700.000,Petty Cash,Tools Expense
+2024-04-20,,22050.000,Petty Cash,Construction Materials
+2024-04-20,,6000.000,Petty Cash,Enron Gas
+2024-04-21,W&B ENTERPRISE,760.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-04-18,,18179.100,Petty Cash,Construction Materials
+2024-04-19,,3787.000,Petty Cash,Meals and Entertainment
+2024-04-19,,6000.000,Petty Cash,Enron Gas
+2024-04-18,,6818.350,Petty Cash,Construction Materials
+2024-04-19,,3734.050,Petty Cash,Construction Materials
+2024-04-19,,10511.000,Petty Cash,Construction Materials
+2024-04-19,,5707.450,Petty Cash,Construction Materials
+2024-04-18,,6000.000,Petty Cash,Enron Gas
+2024-04-17,,8216.750,Petty Cash,Construction Materials
+2024-04-17,Shoppers Delite,8394.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-16,Shoppers Delite,745.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-16,Shoppers Delite,1976.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-17,,108.000,Petty Cash,Meals and Entertainment
+2024-04-21,,6639.000,Petty Cash,Construction Materials
+2024-04-19,Evertan,50000.000,Veron Petty Cash,Taxi  Service for  10 Days
+2024-04-13,Oroville,7000.000,Veron Petty Cash,Transport items
+2024-04-25,,2799.000,Veron Petty Cash,Meals and Entertainment
+2024-04-22,Stewart's Hardware,15515.570,Veron Petty Cash,Drinking igloo
+2024-04-22,,1860.000,Veron Petty Cash,Construction Materials
+2024-04-13,,3970.010,Veron Petty Cash,Construction Materials
+2024-03-23,,8584.640,Veron Petty Cash,Construction Materials
+2024-04-02,,350.000,Veron Petty Cash,Construction Materials
+2024-04-02,,3120.260,Veron Petty Cash,Construction Materials
+2024-04-04,,2230.000,Veron Petty Cash,Construction Materials
+2024-04-01,,4200.000,Veron Petty Cash,Construction Materials
+2024-03-26,,2613.400,Veron Petty Cash,Construction Materials
+2024-03-22,,3601.000,Veron Petty Cash,Construction Materials
+2024-03-09,,1180.000,Veron Petty Cash,Construction Materials
+2024-03-22,,1040.000,Veron Petty Cash,Construction Materials
+2024-04-24,,14614.990,Petty Cash,Construction Materials
+2024-04-25,,1830.780,Petty Cash,Construction Materials
+2024-04-23,Shoppers Delite,2528.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-22,,5195.710,Petty Cash,Construction Materials
+2024-04-23,,3000.950,Petty Cash,Construction Materials
+2024-04-25,,975.200,Petty Cash,Construction Materials
+2024-04-23,,6102.590,Petty Cash,Construction Materials
+2024-04-24,Shoppers Delite,2573.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-27,W&B ENTERPRISE,5480.000,Enron Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-04-22,Shoppers Delite,7563.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-22,,1200.000,Petty Cash,Construction Materials
+2024-04-24,,620.000,Petty Cash,Meals and Entertainment
+2024-04-22,,12000.000,Petty Cash,Enron Gas
+2024-04-25,,10965.480,Petty Cash,Construction Materials
+2024-04-25,,1830.760,Petty Cash,Construction Materials
+2024-04-24,,14614.990,Petty Cash,Construction Materials
+2024-04-26,,4000.000,Petty Cash,Enron Gas
+2024-05-02,Mark Ramanand,2700.000,Undeposited Funds,Hand Tools — Mark Ramanand
+2024-04-04,,14800.000,Veron Petty Cash,Construction Materials
+2024-05-02,,9500.000,Veron Petty Cash,Construction Materials
+2024-05-03,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-04-02,,2200.000,Veron Petty Cash,Comprise hose
+2024-05-01,,990.000,Veron Petty Cash,Highway Toll
+2024-04-29,,990.000,Veron Petty Cash,Highway Toll
+2024-04-29,Highway 2000,990.000,Veron Petty Cash,Highway Toll — Highway 2000
+2024-04-12,,410.000,Veron Petty Cash,Construction Materials
+2024-05-11,W&B ENTERPRISE,4779.270,Enron Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-05-10,Shoppers Delite,3426.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-11,W&B ENTERPRISE,830.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-05-09,Shoppers Delite,3623.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-04-15,Shoppers Delite,2496.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-05-09,Shoppers Delite,81.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-01,Shoppers Delite,10792.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-06,Shoppers Delite,4076.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-04-05,,164.910,Petty Cash,Construction Materials
+2024-05-08,Shoppers Delite,5053.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-04-05,,100.000,Petty Cash,Meals and Entertainment
+2024-05-06,Shoppers Delite,804.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-09,Shoppers Delite,321.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-04-25,,1069.500,Petty Cash,Construction Materials
+2024-05-07,,745.000,Petty Cash,Meals and Entertainment
+2024-05-01,,6000.000,Undeposited Funds,Enron Gas
+2024-04-12,,4052.600,Petty Cash,Tool And Equipment Rental
+2024-04-12,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-12,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-12,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-13,,5000.000,Undeposited Funds,Enron Gas
+2024-04-12,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-13,,350.000,Petty Cash,Highway Toll
+2024-04-14,,153.340,Petty Cash,Meals and Entertainment
+2024-04-15,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-04-14,,455.140,Undeposited Funds,Construction Materials
+2024-04-14,,5000.000,Undeposited Funds,Enron Gas
+2024-04-15,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-03-19,Highway 2000,400.000,Petty Cash,Highway Toll — Highway 2000
+2024-05-06,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-05-06,,8000.000,Undeposited Funds,Enron Gas
+2024-05-12,,7000.000,Undeposited Funds,Enron Gas
+2024-05-06,,13320.000,Undeposited Funds,Meals and Entertainment
+2024-05-05,Highway 2000,1000.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-05-05,Highway 2000,960.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-05-06,Highway 2000,350.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-05-10,,7000.000,Undeposited Funds,Enron Gas
+2024-05-14,Shoppers Delite,863.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-13,Shoppers Delite,8617.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-13,,37687.520,Undeposited Funds,Construction Materials
+2024-05-14,Shoppers Delite,3355.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-14,,4583.000,Undeposited Funds,Meals and Entertainment
+2024-05-18,W&B ENTERPRISE,3710.080,Undeposited Funds,Meals and Entertainment — W&B ENTERPRISE
+2024-05-18,,5313.700,Undeposited Funds,Meals and Entertainment
+2024-05-16,Shoppers Delite,3464.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-16,Shoppers Delite,550.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-14,Shoppers Delite,1000.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-17,Mackville Total service station,10050.000,Undeposited Funds,Enron Gas — Mackville Total service station
+2024-05-13,,7050.000,Undeposited Funds,Enron Gas
+2024-05-16,Shoppers Delite,7160.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-15,,2250.100,Undeposited Funds,Meals and Entertainment
+2024-05-15,Shoppers Delite,1290.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-13,,7370.000,Undeposited Funds,Construction Materials
+2024-05-24,,390.010,Undeposited Funds,Lunch for the work man for the day
+2024-05-24,,223.000,Undeposited Funds,Meals and Entertainment
+2024-05-16,,9891.790,Undeposited Funds,Construction Materials
+2024-05-24,,4180.610,Undeposited Funds,Meals and Entertainment
+2024-05-19,,10000.000,Undeposited Funds,Enron Gas
+2024-05-20,,1650.000,Undeposited Funds,Tool And Equipment Rental
+2024-05-19,Highway 2000,340.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-05-21,,2500.000,Undeposited Funds,Meals and Entertainment
+2024-05-20,,2000.000,Undeposited Funds,Tools Expense
+2024-05-22,,5000.000,Undeposited Funds,Office Equiqmen
+2024-05-16,,10000.000,Undeposited Funds,Construction Materials
+2024-06-27,,1300.000,Undeposited Funds,Telephone Expense
+2024-06-27,,1300.000,Undeposited Funds,Telephone Expense
+2024-06-20,,5600.000,Undeposited Funds,Hand Tools
+2024-05-30,Shoppers Delite,9000.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-05-20,,6500.000,Undeposited Funds,Construction Materials
+2024-05-20,,1400.000,Undeposited Funds,Hand Tools
+2024-05-18,,3100.000,Petty Cash,Tools Expense
+2024-05-13,,900.000,Undeposited Funds,Meals and Entertainment
+2024-05-13,,200.000,Undeposited Funds,Meals and Entertainment
+2024-05-20,,3500.000,Petty Cash,Tools Expense
+2024-05-20,,500.000,Petty Cash,Meals and Entertainment
+2024-05-20,,300.000,Undeposited Funds,Tools Expense
+2024-05-25,,5000.000,Undeposited Funds,Enron Gas
+2024-05-26,,2500.000,Petty Cash,Meals and Entertainment
+2024-05-27,,3700.000,Petty Cash,Telephone Expense
+2024-05-31,Highway 2000,680.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-01,,5000.000,Petty Cash,Construction Materials
+2024-06-01,,6000.000,Petty Cash,Meals and Entertainment
+2024-06-01,,6000.000,Petty Cash,Meals and Entertainment
+2024-06-01,,300.000,Petty Cash,Meals and Entertainment
+2024-05-26,,45000.000,Petty Cash,Tool And Equipment Rental
+2024-05-12,,26000.000,Undeposited Funds,Construction Materials
+2024-05-27,,157550.000,Undeposited Funds,Construction Materials
+2024-06-27,Shoppers Delite,4700.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-28,,900.000,Petty Cash,Meals and Entertainment
+2024-05-29,,2000.000,Petty Cash,Meals and Entertainment
+2024-05-27,,4000.000,Petty Cash,Construction Materials
+2024-05-28,,5100.000,Petty Cash,Enron Gas
+2024-05-28,,5200.000,Petty Cash,Meals and Entertainment
+2024-04-29,,3000.000,Undeposited Funds,Meals and Entertainment
+2024-05-30,,300.000,Petty Cash,Meals and Entertainment
+2024-05-17,,12000.000,Petty Cash,Construction Materials
+2024-05-31,,1400.000,Petty Cash,Meals and Entertainment
+2024-05-28,Shoppers Delite,4900.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-02,,1200.000,Petty Cash,Service and repair
+2024-06-02,W&B ENTERPRISE,800.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-06-02,,2000.000,Petty Cash,Enron Gas
+2024-05-28,,12000.000,Petty Cash,Construction Materials
+2024-06-12,,13000.000,Petty Cash,Construction Materials
+2024-05-28,,133900.000,Petty Cash,Service and repair
+2024-05-30,,2200.000,Petty Cash,Meals and Entertainment
+2024-05-31,Mackville Total service station,8200.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-05-31,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-07,Highway 2000,2000.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-03,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-07,,521.000,Petty Cash,Meals and Entertainment
+2024-06-07,,90.000,Petty Cash,Meals and Entertainment
+2024-06-07,,5100.000,Petty Cash,Enron Gas
+2024-06-03,Shoppers Delite,10253.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-04,,1280.000,Petty Cash,Hand Tools
+2024-06-04,Shoppers Delite,2641.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-03,,154.000,Petty Cash,Meals and Entertainment
+2024-06-03,Mackville Total service station,7150.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-06-03,,1800.000,Petty Cash,Meals and Entertainment
+2024-06-04,Shoppers Delite,5000.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-03,Shoppers Delite,2731.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-05,Shoppers Delite,5900.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-05-27,Shoppers Delite,232.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-03,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-07,,1250.000,Petty Cash,Telephone Expense
+2024-06-05,,25000.000,Petty Cash,Delivery
+2024-06-12,,750.000,Petty Cash,Meals and Entertainment
+2024-06-16,,1500.000,Petty Cash,Hand Tools
+2024-06-13,Shoppers Delite,11133.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-13,,600.000,Petty Cash,Construction Materials
+2024-06-10,,12600.000,Petty Cash,Automobile Expense
+2024-06-13,Mackville Total service station,1800.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-06-10,,365.250,Petty Cash,Meals and Entertainment
+2024-06-10,Shoppers Delite,13261.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-12,Shoppers Delite,3100.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-10,Highway 2000,1000.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-10,Highway 2000,2000.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-10,Highway 2000,960.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-10,,10000.000,Petty Cash,Enron Gas
+2024-06-13,,4000.000,Petty Cash,Enron Gas
+2024-06-12,Shoppers Delite,1691.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-13,,1600.800,Petty Cash,Construction Materials
+2024-06-13,,1450.000,Petty Cash,Construction Materials
+2024-06-15,Highway 2000,990.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-15,,4000.000,Petty Cash,Mason Tools
+2024-06-04,W&B ENTERPRISE,1010.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-06-05,,157650.000,Petty Cash,Construction Materials
+2024-06-16,W&B ENTERPRISE,300.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-06-27,,2600.000,Enron Petty Cash,Construction Materials
+2024-06-28,Shoppers Delite,3000.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-28,Highway 2000,1000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2024-06-28,,350.000,Petty Cash,Highway Toll
+2024-06-28,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-29,Highway 2000,500.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-06-24,,10000.000,Undeposited Funds,Enron Gas
+2024-06-26,,23600.000,Undeposited Funds,Construction Materials
+2024-06-26,,10000.000,Petty Cash,Construction Materials
+2024-06-25,Shoppers Delite,18500.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-06-18,,58000.000,Undeposited Funds,Service and repair
+2024-06-04,W&B ENTERPRISE,1100.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-06-22,W&B ENTERPRISE,4500.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-06-17,W&B ENTERPRISE,8000.000,Petty Cash,Office Equiqmen — W&B ENTERPRISE
+2024-06-27,,1300.000,Petty Cash,Telephone Expense
+2024-06-27,,1300.000,Petty Cash,Telephone Expense
+2024-06-28,,2500.000,Petty Cash,Meals and Entertainment
+2024-06-19,,4500.000,Petty Cash,Meals and Entertainment
+2024-06-20,Mackville Total service station,1400.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-06-20,Mackville Total service station,650.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-06-19,,3000.000,Petty Cash,Meals and Entertainment
+2024-06-18,,2200.000,Petty Cash,Enron Gas
+2024-06-24,Highway 2000,3500.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-06-24,,3500.000,Undeposited Funds,Highway Toll
+2024-06-25,Highway 2000,450.000,Petty Cash,Highway Toll — Highway 2000
+2024-06-25,,15000.000,Undeposited Funds,Enron Gas
+2024-06-25,Mackville Total service station,1400.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-06-26,,600.000,Petty Cash,Meals and Entertainment
+2024-06-27,Mackville Total service station,1400.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-06-25,,1100.000,Petty Cash,Construction Materials
+2024-06-27,,7200.000,Petty Cash,Hand Tools
+2024-06-25,,1900.000,Undeposited Funds,Construction Materials
+2024-06-27,Shoppers Delite,50.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-06-25,,250.000,Petty Cash,Meals and Entertainment
+2024-02-16,,750.000,Petty Cash,Meals and Entertainment
+2024-06-24,,50000.000,Current Account JMD,Repairs and Maintenance
+2024-07-01,Shoppers Delite,10611.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-04,W&B ENTERPRISE,1300.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-07-02,,2500.000,Petty Cash,Construction Materials
+2024-07-02,Shoppers Delite,900.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-01,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-02,,800.000,Petty Cash,Meals and Entertainment
+2024-07-02,,1700.000,Petty Cash,Meals and Entertainment
+2024-07-05,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-04,,4000.000,Petty Cash,Enron Gas
+2024-07-01,Mackville Total service station,1000.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-06-30,Highway 2000,350.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-10,,1000.000,Petty Cash,Hand Tools
+2024-07-06,W&B ENTERPRISE,12100.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-07-11,Shoppers Delite,7700.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-10,Shoppers Delite,7600.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-09,Shoppers Delite,8000.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-09,Shoppers Delite,4500.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-08,,5000.000,Petty Cash,Meals and Entertainment
+2024-07-08,,18000.000,Petty Cash,Meals and Entertainment
+2024-07-09,,12000.000,Petty Cash,Enron Gas
+2024-07-11,Shoppers Delite,5000.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-09,Shoppers Delite,2500.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-06-30,,12000.000,Petty Cash,Meals and Entertainment
+2024-06-30,,5000.000,Petty Cash,Meals and Entertainment
+2024-07-06,Highway 2000,390.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-06,,2000.000,Undeposited Funds,Meals and Entertainment
+2024-07-06,,2000.000,Undeposited Funds,Meals and Entertainment
+2024-07-09,,1200.000,Undeposited Funds,Meals and Entertainment
+2024-07-10,,2200.000,Undeposited Funds,Meals and Entertainment
+2024-07-06,Highway 2000,390.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-11,,1250.000,Undeposited Funds,Construction Materials
+2024-06-30,,10000.000,Undeposited Funds,Enron Gas
+2024-06-09,,2000.000,Undeposited Funds,Enron Gas
+2024-06-08,,1840.000,Undeposited Funds,Construction Materials
+2024-06-08,,8207.000,Undeposited Funds,Meals and Entertainment
+2024-07-10,Shoppers Delite,600.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-17,,12500.000,Petty Cash,Meals and Entertainment
+2024-07-17,W&B ENTERPRISE,1350.000,Enron Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-07-17,,3500.000,Petty Cash,Meals and Entertainment
+2024-07-17,,700.000,Petty Cash,Meals and Entertainment
+2024-07-12,,22500.000,Undeposited Funds,Construction Materials
+2024-07-17,,3100.000,Petty Cash,Construction Materials
+2024-07-21,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-21,,5000.000,Undeposited Funds,Enron Gas
+2024-07-20,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-19,Highway 2000,1100.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-16,Shoppers Delite,7725.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-17,,1210.000,Undeposited Funds,Meals and Entertainment
+2024-07-18,Shoppers Delite,500.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-07-18,,1240.000,Undeposited Funds,Meals and Entertainment
+2024-07-21,Highway 2000,470.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-21,Highway 2000,660.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-20,Highway 2000,1100.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-19,Highway 2000,390.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-20,Highway 2000,390.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-10,,1150.000,Undeposited Funds,Construction Materials
+2024-07-01,Highway 2000,990.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-07-10,,2550.000,Petty Cash,Construction Materials
+2024-07-18,,10050.000,Petty Cash,Hand Tools
+2024-07-20,,2200.000,Undeposited Funds,Meals and Entertainment
+2024-07-19,Shoppers Delite,1642.000,Undeposited Funds,Meals and Entertainment — Shoppers Delite
+2024-07-18,,4000.000,Undeposited Funds,Meals and Entertainment
+2024-07-16,,1240.000,Undeposited Funds,Meals and Entertainment
+2024-07-23,,21000.000,Petty Cash,Construction Materials
+2024-07-23,,15000.000,Undeposited Funds,Construction Materials
+2024-07-27,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-27,,5000.000,Petty Cash,Enron Gas
+2024-07-26,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-15,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-23,,21000.000,Undeposited Funds,Construction Materials
+2024-07-24,,2500.000,Petty Cash,Construction Materials
+2024-07-25,,2500.000,Petty Cash,Construction Materials
+2024-07-22,,1808.000,Petty Cash,Construction Materials
+2024-07-22,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-23,,1150.000,Petty Cash,Meals and Entertainment
+2024-07-24,,700.000,Petty Cash,Meals and Entertainment
+2024-07-25,Shoppers Delite,5000.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-27,,1600.000,Petty Cash,Meals and Entertainment
+2024-07-27,,574.990,Petty Cash,Construction Materials
+2024-07-25,,5000.000,Petty Cash,Enron Gas
+2024-07-22,,700.000,Petty Cash,Meals and Entertainment
+2024-07-22,Shoppers Delite,10700.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-22,,10000.000,Undeposited Funds,Enron Gas
+2024-07-23,,1795.000,Petty Cash,Construction Materials
+2024-07-30,W&B ENTERPRISE,3000.000,Undeposited Funds,Meals and Entertainment — W&B ENTERPRISE
+2024-07-19,,10000.000,Undeposited Funds,Enron Gas
+2024-07-15,,900.000,Petty Cash,Meals and Entertainment
+2024-06-08,,8382.000,Undeposited Funds,Construction Materials
+2024-07-19,,21850.000,Undeposited Funds,Construction Materials
+2024-06-08,,11775.260,Undeposited Funds,Construction Materials
+2024-06-05,,1061.090,Undeposited Funds,Construction Materials
+2024-06-17,,4525.000,Undeposited Funds,Construction Materials
+2024-06-21,Highway 2000,350.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-06-18,,2250.000,Undeposited Funds,Construction Materials
+2024-08-04,,8000.000,Undeposited Funds,Enron Gas
+2024-06-21,,430.000,Undeposited Funds,Highway Toll
+2024-06-18,,430.000,Undeposited Funds,Highway Toll
+2024-06-15,,5000.000,Undeposited Funds,Enron Gas
+2024-06-14,,5000.000,Undeposited Funds,Enron Gas
+2024-06-18,Highway 2000,350.000,Undeposited Funds,Highway Toll — Highway 2000
+2024-06-06,,5000.000,Undeposited Funds,Enron Gas
+2024-05-23,,5000.000,Undeposited Funds,Enron Gas
+2024-05-27,,2000.000,Undeposited Funds,Construction Materials
+2024-05-22,,2461.000,Undeposited Funds,Office Equiqmen
+2024-05-27,,1402.000,Undeposited Funds,Meals and Entertainment
+2024-05-27,,2501.000,Undeposited Funds,Meals and Entertainment
+2024-05-31,,4030.000,Undeposited Funds,Construction Materials
+2024-05-03,,3650.000,Undeposited Funds,Construction Materials
+2024-08-03,,74000.000,Petty Cash,Tool And Equipment Rental
+2024-08-03,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-03,,600.000,Petty Cash,Hand Tools
+2024-08-03,,10653.000,Petty Cash,Hand Tools
+2024-07-31,,2800.000,Petty Cash,Construction Materials
+2024-08-08,,500.000,Petty Cash,Service and repair
+2024-08-05,,13650.000,Petty Cash,Service and repair
+2024-08-05,,10000.000,Petty Cash,Enron Gas
+2024-08-05,,6500.000,Petty Cash,Meals and Entertainment
+2024-08-10,,1900.000,Petty Cash,Hand Tools
+2024-08-08,,1300.000,Petty Cash,Service and repair
+2024-08-09,,200.000,Undeposited Funds,Meals and Entertainment
+2024-08-10,,4500.000,Undeposited Funds,Meals and Entertainment
+2024-08-08,,800.000,Undeposited Funds,Meals and Entertainment
+2024-08-09,,800.000,Undeposited Funds,Meals and Entertainment
+2024-08-09,,45.000,Undeposited Funds,Meals and Entertainment
+2024-08-10,W&B ENTERPRISE,5113.270,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-08-22,,3800.000,Petty Cash,Meals and Entertainment
+2024-08-21,Mackville Total service station,1350.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-08-21,,1950.000,Petty Cash,Highway Toll
+2024-08-22,,4480.000,Petty Cash,Hand Tools
+2024-08-21,Mackville Total service station,9990.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-08-21,Shoppers Delite,8000.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-20,,46500.000,Petty Cash,Office Supplies
+2024-08-20,,2730.000,Petty Cash,Meals and Entertainment
+2024-08-20,,10000.000,Petty Cash,Enron Gas
+2024-08-21,,1950.000,Petty Cash,Highway Toll
+2024-08-21,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-13,,4826.000,Petty Cash,Construction Materials
+2024-08-14,Shoppers Delite,7039.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-15,Shoppers Delite,4565.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-11,,10000.000,Petty Cash,Enron Gas
+2024-08-11,,12175.000,Petty Cash,Meals and Entertainment
+2024-08-11,,1694.780,Petty Cash,Construction Materials
+2024-08-11,,900.000,Petty Cash,Meals and Entertainment
+2024-08-16,,5000.000,Petty Cash,Enron Gas
+2024-08-16,Shoppers Delite,1402.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-17,,1552.960,Petty Cash,Construction Materials
+2024-08-17,,5634.770,Petty Cash,Construction Materials
+2024-08-13,,189.010,Petty Cash,Construction Materials
+2024-08-12,Shoppers Delite,12404.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-12,,12231.220,Undeposited Funds,Construction Materials
+2024-08-12,,4025.490,Petty Cash,Construction Materials
+2024-08-12,,700.000,Petty Cash,Meals and Entertainment
+2024-08-12,,500.000,Petty Cash,Hand Tools
+2024-08-13,,1540.000,Petty Cash,Hand Tools
+2024-08-15,,700.000,Petty Cash,Meals and Entertainment
+2024-08-12,,1450.000,Petty Cash,Meals and Entertainment
+2024-08-14,,1400.000,Petty Cash,Meals and Entertainment
+2024-08-19,W&B ENTERPRISE,360.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-08-19,W&B ENTERPRISE,5988.200,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-08-06,,4100.000,Petty Cash,Highway Toll
+2024-08-26,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-23,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-26,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-28,,12949.990,Petty Cash,Construction Materials
+2024-08-26,,2286.690,Petty Cash,Meals and Entertainment
+2024-08-29,,10000.000,Petty Cash,Enron Gas
+2024-08-28,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-28,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-27,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-28,,1500.000,Petty Cash,Hand Tools
+2024-08-28,,4949.000,Petty Cash,Meals and Entertainment
+2024-08-27,,2000.000,Petty Cash,Enron Gas
+2024-08-26,,3675.000,Petty Cash,Meals and Entertainment
+2024-08-27,,1850.000,Petty Cash,Meals and Entertainment
+2024-08-26,,5000.000,Petty Cash,Enron Gas
+2024-08-26,,9036.000,Petty Cash,Construction Materials
+2024-08-27,Shoppers Delite,19610.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-25,,2294.910,Petty Cash,Construction Materials
+2024-08-28,,5000.000,Petty Cash,Enron Gas
+2024-08-23,,10000.000,Petty Cash,Enron Gas
+2024-08-26,,31404.200,Undeposited Funds,Construction Materials
+2024-08-29,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-29,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-29,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-29,Mackville Total service station,900.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-08-23,,2780.000,Petty Cash,Meals and Entertainment
+2024-08-23,,4922.390,Undeposited Funds,Hand Tools
+2024-08-27,W&B ENTERPRISE,1923.200,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-08-28,W&B ENTERPRISE,3356.400,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-09-25,W&B ENTERPRISE,795.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-08-25,W&B ENTERPRISE,140.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-08-31,,15106.670,Petty Cash,Meals and Entertainment
+2024-08-31,,3690.000,Petty Cash,Meals and Entertainment
+2024-08-31,,6191.400,Petty Cash,Meals and Entertainment
+2024-08-23,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-09,Shoppers Delite,14435.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-09,,5000.000,Petty Cash,Enron Gas
+2024-09-09,,3150.000,Petty Cash,Hand Tools
+2024-09-10,,1060.000,Petty Cash,Meals and Entertainment
+2024-09-06,,3120.000,Petty Cash,Meals and Entertainment
+2024-09-12,,820.000,Petty Cash,Meals and Entertainment
+2024-09-08,,3020.000,Petty Cash,Meals and Entertainment
+2024-09-13,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-13,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-02,Shoppers Delite,11085.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-10,Shoppers Delite,1330.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-06,Shoppers Delite,319.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-04,Shoppers Delite,1247.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-11,Shoppers Delite,5418.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-11,,2279.000,Petty Cash,Meals and Entertainment
+2024-09-12,Shoppers Delite,2450.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-05,Shoppers Delite,1858.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-04,,580.000,Petty Cash,Meals and Entertainment
+2024-09-09,,995.000,Petty Cash,Meals and Entertainment
+2024-09-02,,7267.290,Petty Cash,Construction Materials
+2024-09-12,,751.770,Petty Cash,Hand Tools
+2024-09-13,,3500.000,Petty Cash,Enron Gas
+2024-09-05,,8000.000,Petty Cash,Enron Gas
+2024-09-02,,10000.000,Petty Cash,Enron Gas
+2024-09-06,,3000.000,Petty Cash,Enron Gas
+2024-09-11,,5000.000,Petty Cash,Enron Gas
+2024-09-08,,6000.000,Petty Cash,Enron Gas
+2024-09-02,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-04,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-05,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-30,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-20,,700.000,Petty Cash,Meals and Entertainment
+2024-09-20,,1960.000,Petty Cash,Meals and Entertainment
+2024-09-19,,10000.000,Petty Cash,Software
+2024-09-20,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-16,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-03,,12000.000,Undeposited Funds,Cost of Goods Sold
+2024-08-03,,5000.000,Undeposited Funds,Enron Gas
+2024-07-30,,660.000,Undeposited Funds,Highway Toll
+2024-07-31,,700.000,Undeposited Funds,Meals and Entertainment
+2024-06-24,,2000.000,Undeposited Funds,Enron Gas
+2024-07-27,,5000.000,Veron Petty Cash,Enron Gas
+2024-07-30,,10000.000,Veron Petty Cash,Enron Gas
+2024-07-29,,869.570,Undeposited Funds,Meals and Entertainment
+2024-08-01,,700.000,Undeposited Funds,Meals and Entertainment
+2024-08-01,,960.000,Undeposited Funds,Cost of Goods Sold
+2024-08-01,,6000.000,Veron Petty Cash,Enron Gas
+2024-07-31,,8098.000,Veron Petty Cash,Meals and Entertainment
+2024-08-01,,2608.700,Veron Petty Cash,Repairs and Maintenance
+2024-07-31,,1500.000,Veron Petty Cash,Repairs and Maintenance
+2024-09-24,,4450.000,Petty Cash,Meals and Entertainment
+2024-09-25,,700.000,Petty Cash,Meals and Entertainment
+2024-09-25,,6151.000,Petty Cash,Meals and Entertainment
+2024-09-24,Mackville Total service station,900.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-09-24,Mackville Total service station,10000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-09-26,,2300.000,Petty Cash,Meals and Entertainment
+2024-08-01,Shoppers Delite,1800.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-08-01,Shoppers Delite,100.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-07-29,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-30,Highway 2000,660.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-31,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-02,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-30,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-30,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-08-01,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-24,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-30,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-11,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-16,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-03,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-07-10,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-16,,10000.000,Petty Cash,Enron Gas
+2024-10-08,Shoppers Delite,2772.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-11,Shoppers Delite,4360.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-24,,2000.000,Petty Cash,Enron Gas
+2024-09-11,Mackville Total service station,5000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-09-30,Shoppers Delite,1203.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-01,Mackville Total service station,4000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-10-13,W&B ENTERPRISE,270.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-10-13,,10000.000,Petty Cash,Construction Materials
+2024-10-13,,190.000,Petty Cash,Meals and Entertainment
+2024-10-13,W&B ENTERPRISE,19600.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-10-11,Highway 2000,10000.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-01,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-08,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-02,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-16,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-03,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-02,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-19,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-10,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-02,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-04,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-07,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-02,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-18,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-09-28,,3000.000,Petty Cash,Enron Gas
+2024-09-28,,3500.000,Veron Petty Cash,Construction Materials
+2024-10-03,Mackville Total service station,5000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-09-20,Mackville Total service station,7000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-10-08,,1600.000,Petty Cash,Hand Tools
+2024-09-30,Shoppers Delite,745.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-19,Mackville Total service station,2000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-09-30,,2000.000,Veron Petty Cash,Enron Gas
+2024-10-09,,1710.000,Petty Cash,Hand Tools
+2024-09-23,,7600.880,Veron Petty Cash,Construction Materials
+2024-09-19,Shoppers Delite,5222.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-04,Shoppers Delite,1355.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-10,,700.000,Petty Cash,Meals and Entertainment
+2024-10-02,,5000.000,Petty Cash,Enron Gas
+2024-09-23,,2000.000,Veron Petty Cash,Enron Gas
+2024-10-04,,6000.000,Petty Cash,Enron Gas
+2024-09-03,,2000.000,Veron Petty Cash,Enron Gas
+2024-10-02,,5000.000,Petty Cash,Enron Gas
+2024-10-08,,4521.800,Petty Cash,Hand Tools
+2024-10-01,Shoppers Delite,745.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-24,Shoppers Delite,611.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-01,Shoppers Delite,5754.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-10,,4000.000,Petty Cash,Meals and Entertainment
+2024-10-09,Shoppers Delite,5923.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-30,Shoppers Delite,6725.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-09-26,Shoppers Delite,4786.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-07,Shoppers Delite,6839.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-09,Mackville Total service station,900.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-09-26,,4450.000,Petty Cash,Meals and Entertainment
+2024-09-24,Mackville Total service station,900.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-09-25,,6150.000,Petty Cash,Meals and Entertainment
+2024-10-03,,2800.000,Petty Cash,Meals and Entertainment
+2024-09-25,,700.000,Petty Cash,Meals and Entertainment
+2024-09-24,Mackville Total service station,10000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-10-07,,700.000,Petty Cash,Meals and Entertainment
+2024-10-07,,1140.000,Petty Cash,Meals and Entertainment
+2024-10-03,Shoppers Delite,9165.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-12,W&B ENTERPRISE,5540.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-10-14,,10000.000,Petty Cash,Enron Gas
+2024-10-14,Shoppers Delite,17518.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-14,Shoppers Delite,17518.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-18,,6000.000,Petty Cash,Construction Materials
+2024-10-19,,7000.000,Petty Cash,Construction Materials
+2024-10-18,,350.000,Petty Cash,Hand Tools
+2024-10-14,,10000.000,Petty Cash,Enron Gas
+2024-10-17,Shoppers Delite,1112.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-17,Shoppers Delite,7454.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-17,Shoppers Delite,4395.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-22,Shoppers Delite,17052.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-20,W&B ENTERPRISE,13000.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-10-28,,4510.000,Petty Cash,Hand Tools
+2024-10-28,,10000.000,Petty Cash,Enron Gas
+2024-10-24,Shoppers Delite,1033.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-23,,5000.000,Petty Cash,Enron Gas
+2024-10-28,Shoppers Delite,9939.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-29,,10000.000,Petty Cash,Enron Gas
+2024-10-29,Shoppers Delite,1886.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-29,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-29,Highway 2000,10000.000,Petty Cash,Highway Toll — Highway 2000
+2024-10-27,,10000.000,Petty Cash,Construction Materials
+2024-10-27,W&B ENTERPRISE,19600.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-10-25,Shoppers Delite,1053.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-31,Shoppers Delite,929.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-31,,7000.000,Petty Cash,Enron Gas
+2024-10-30,Shoppers Delite,7337.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-10-27,CARL SIMPSON,20000.000,Petty Cash,Tool And Equipment Rental — CARL SIMPSON
+2024-10-27,CARL SIMPSON,10000.000,Petty Cash,Delivery — CARL SIMPSON
+2024-10-27,W&B ENTERPRISE,1987.660,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-10-27,,3886.960,Petty Cash,Meals and Entertainment
+2024-11-03,W&B ENTERPRISE,500.000,Petty Cash,Hand Tools — W&B ENTERPRISE
+2024-10-17,Shoppers Delite,7454.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-11-04,,1600.000,Petty Cash,Meals and Entertainment
+2024-10-17,Shoppers Delite,4395.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-11-02,,1240.000,Petty Cash,Meals and Entertainment
+2024-11-01,Shoppers Delite,3533.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-11-01,,3000.000,Petty Cash,Enron Gas
+2024-11-04,,525.000,Petty Cash,Construction Materials
+2024-11-04,,10000.000,Petty Cash,Enron Gas
+2024-11-04,,22900.000,Petty Cash,Service and repair
+2024-11-02,,4200.000,Petty Cash,Construction Materials
+2024-11-04,,2951.390,Petty Cash,Construction Materials
+2024-11-03,,8600.000,Petty Cash,Service and repair
+2024-11-03,,7500.000,Petty Cash,Construction Materials
+2024-11-05,CARL SIMPSON,5000.000,Petty Cash,Delivery — CARL SIMPSON
+2024-11-06,,4500.000,Petty Cash,Hand Tools
+2024-11-06,,40570.900,Petty Cash,Construction Materials
+2024-11-06,W&B ENTERPRISE,4670.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-11-08,W&B ENTERPRISE,15500.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-11-09,W&B ENTERPRISE,5500.000,Petty Cash,Hand Tools — W&B ENTERPRISE
+2024-10-20,,25000.000,Undeposited Funds,Service and repair
+2024-10-23,,708.200,Petty Cash,Construction Materials
+2024-11-09,W&B ENTERPRISE,4000.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-11-08,W&B ENTERPRISE,150.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-11-07,,180.000,Petty Cash,Meals and Entertainment
+2024-11-07,,420.000,Petty Cash,Meals and Entertainment
+2024-11-13,,3389.980,Petty Cash,Construction Materials
+2024-11-14,,12000.000,Petty Cash,Enron Gas
+2024-11-08,,10000.000,Petty Cash,Enron Gas
+2024-11-11,,18800.000,Petty Cash,Construction Materials
+2024-11-12,,13474.000,Petty Cash,Meals and Entertainment
+2024-11-14,Shoppers Delite,6730.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-11-09,,5790.000,Petty Cash,Hand Tools
+2024-11-16,,30600.000,Undeposited Funds,Construction Materials
+2024-11-18,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-11-17,,8950.000,Petty Cash,Meals and Entertainment
+2024-11-18,Shoppers Delite,8500.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-11-18,,10000.000,Petty Cash,Enron Gas
+2024-11-18,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-11-18,Highway 2000,390.000,Petty Cash,Highway Toll — Highway 2000
+2024-11-18,Shoppers Delite,745.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-12-24,W&B ENTERPRISE,1200.000,Petty Cash,Meals and Entertainment — W&B ENTERPRISE
+2024-12-28,Highway 2000,10000.000,Petty Cash,Highway Toll — Highway 2000
+2024-11-30,,16800.000,Petty Cash,Service and repair
+2024-11-30,,1990.000,Petty Cash,Service and repair
+2024-11-28,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-11-26,,10000.000,Petty Cash,Enron Gas
+2024-11-26,Shoppers Delite,8060.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-11-28,Mackville Total service station,10000.000,Petty Cash,Enron Gas — Mackville Total service station
+2024-11-26,,5700.000,Petty Cash,Service and repair
+2024-11-30,,700.000,Petty Cash,Service and repair
+2024-11-27,Shoppers Delite,778.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-12-03,,1650.000,Petty Cash,Hand Tools
+2024-12-03,Mackville Total service station,900.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-12-05,Mackville Total service station,1350.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-12-02,,47000.000,Petty Cash,Service and repair
+2024-12-02,,63000.000,Petty Cash,Service and repair
+2024-12-02,Shoppers Delite,13756.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-12-01,,4000.000,Petty Cash,Service and repair
+2024-12-02,,12000.000,Petty Cash,Enron Gas
+2024-12-03,Shoppers Delite,400.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-12-02,Mackville Total service station,1350.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-12-03,,2800.000,Petty Cash,Hand Tools
+2024-12-02,,4850.000,Petty Cash,Hand Tools
+2024-12-05,,8357.080,Petty Cash,Meals and Entertainment
+2024-12-06,,18000.000,Petty Cash,Construction Materials
+2024-12-07,,6110.080,Petty Cash,Construction Materials
+2024-12-01,,15000.000,Petty Cash,Service and repair
+2024-12-08,,13000.000,Petty Cash,Enron Gas
+2024-12-07,,25000.000,Petty Cash,Construction Materials
+2024-12-10,,110000.000,Petty Cash,Construction Materials
+2024-12-10,Mackville Total service station,1380.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-12-12,,1280.000,Petty Cash,Meals and Entertainment
+2024-12-09,,3000.000,Petty Cash,Meals and Entertainment
+2024-12-12,,120000.000,Petty Cash,Construction Materials
+2024-12-16,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-18,Mackville Total service station,2000.000,Petty Cash,Meals and Entertainment — Mackville Total service station
+2024-12-20,,30500.000,Petty Cash,Meals and Entertainment
+2024-12-16,,15000.000,Petty Cash,Enron Gas
+2024-12-18,Highway 2000,5000.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-19,,7500.000,Petty Cash,Meals and Entertainment
+2024-12-16,,22000.000,Petty Cash,Meals and Entertainment
+2024-12-18,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-01,,6500.000,Petty Cash,Service and repair
+2024-12-17,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-11,Shoppers Delite,5821.000,Petty Cash,Meals and Entertainment — Shoppers Delite
+2024-12-09,,2266.000,Petty Cash,Meals and Entertainment
+2024-12-10,,2270.000,Petty Cash,Hand Tools
+2024-12-10,,5400.000,Petty Cash,Meals and Entertainment
+2024-12-21,,5000.000,Petty Cash,Enron Gas
+2024-12-20,,8305.000,Petty Cash,Meals and Entertainment
+2024-12-23,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-22,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-23,,13000.000,Petty Cash,Enron Gas
+2024-12-23,,1100.000,Petty Cash,Highway Toll
+2024-12-24,,10000.000,Petty Cash,Enron Gas
+2025-01-07,,14192.260,Petty Cash,Meals and Entertainment
+2024-12-28,,6330.720,Petty Cash,Meals and Entertainment
+2025-01-06,,1838.820,Petty Cash,Meals and Entertainment
+2025-01-07,,8000.000,Petty Cash,Enron Gas
+2025-01-07,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2024-11-28,,4000.000,Petty Cash,Enron Gas
+2025-01-05,,250.000,Petty Cash,Construction Materials
+2025-01-05,,3289.720,Petty Cash,Construction Materials
+2025-01-01,W&B ENTERPRISE,10500.000,Petty Cash,Construction Materials — W&B ENTERPRISE
+2024-11-27,W&B ENTERPRISE,9500.000,Petty Cash,Hand Tools — W&B ENTERPRISE
+2025-01-01,,5000.000,Petty Cash,Enron Gas
+2025-01-06,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2025-01-06,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2024-12-29,W&B ENTERPRISE,42999.990,Petty Cash,Construction Materials — W&B ENTERPRISE
+2025-01-07,,7750.000,Petty Cash,Hand Tools
+2024-11-27,,1470.000,Petty Cash,Meals and Entertainment
+2024-10-22,,900.000,Veron Petty Cash,Hand Tools
+2024-10-25,,994.500,Veron Petty Cash,Construction Materials
+2024-11-28,,2519.870,Veron Petty Cash,Construction Materials
+2024-12-10,,227.470,Veron Petty Cash,Construction Materials
+2024-11-23,,426.880,Veron Petty Cash,Construction Materials
+2024-10-24,,3029.990,Veron Petty Cash,Construction Materials
+2024-11-27,,1100.000,Veron Petty Cash,Highway Toll
+2024-10-26,,1100.000,Veron Petty Cash,Highway Toll
+2024-11-23,,220.800,Veron Petty Cash,Construction Materials
+2024-11-20,,2255.000,Veron Petty Cash,Meals and Entertainment
+2024-11-25,,5000.000,Veron Petty Cash,Veron Gas
+2024-11-22,,7000.000,Veron Petty Cash,Construction Materials
+2024-11-22,,1100.000,Veron Petty Cash,Highway Toll
+2024-11-19,,3493.000,Veron Petty Cash,Meals and Entertainment
+2024-11-22,,1100.000,Veron Petty Cash,Highway Toll
+2024-11-19,,1928.000,Veron Petty Cash,Meals and Entertainment
+2024-11-19,,1100.000,Veron Petty Cash,Highway Toll
+2024-11-21,,4346.000,Veron Petty Cash,Meals and Entertainment
+2024-11-22,,1008.000,Veron Petty Cash,Meals and Entertainment
+2024-12-04,,547.830,Veron Petty Cash,Construction Materials
+2024-12-19,,1500.000,Veron Petty Cash,Veron Gas
+2024-12-19,,2900.000,Veron Petty Cash,Veron Gas
+2025-01-09,,14529.130,Petty Cash,Meals and Entertainment
+2025-01-17,,4280.000,Petty Cash,Hand Tools
+2025-01-13,,21613.250,Petty Cash,Meals and Entertainment
+2025-01-11,,1750.000,Petty Cash,Meals and Entertainment
+2025-01-11,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2025-01-06,Mackville Total service station,6000.000,Petty Cash,Enron Gas — Mackville Total service station
+2025-01-17,,10000.000,Petty Cash,Enron Gas
+2025-01-17,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2025-01-17,Highway 2000,470.000,Petty Cash,Highway Toll — Highway 2000
+2025-01-12,,2480.000,Petty Cash,Meals and Entertainment
+2025-01-22,,3000.000,Veron Petty Cash,Veron Gas
+2025-01-25,,2152.110,Veron Petty Cash,Construction Materials
+2025-01-25,,1500.000,Veron Petty Cash,Construction Materials
+2024-11-27,Home Boy's,139000.000,Petty Cash,Tool And Equipment Rental — Home Boy's
+2025-01-21,,7000.000,Petty Cash,Meals and Entertainment
+2025-01-28,,1100.000,Petty Cash,Hand Tools
+2025-01-31,Highway 2000,390.000,Undeposited Funds,Highway Toll — Highway 2000
+2025-01-31,Highway 2000,1100.000,Undeposited Funds,Highway Toll — Highway 2000
+2025-01-31,Highway 2000,390.000,Undeposited Funds,Highway Toll — Highway 2000
+2025-01-21,,1144.480,Petty Cash,Meals and Entertainment
+2025-01-29,Highway 2000,1100.000,Undeposited Funds,Highway Toll — Highway 2000
+2025-02-26,,11638.420,Undeposited Funds,Meals and Entertainment
+2025-01-28,,5000.000,Undeposited Funds,Enron Gas
+2025-01-20,,3888.210,Petty Cash,Construction Materials
+2025-01-30,,4259.000,Petty Cash,Meals and Entertainment
+2025-02-14,,5000.000,Enron Petty Cash,Enron Gas
+2025-02-10,,390.000,Enron Petty Cash,Highway Toll
+2025-02-05,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-02-05,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2025-02-05,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2025-02-14,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-02-14,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-02-05,,2820.100,Enron Petty Cash,Meals and Entertainment
+2025-02-07,,3500.000,Petty Cash,Enron Gas
+2025-02-10,,10000.000,Enron Petty Cash,Enron Gas
+2025-02-10,,5006.440,Enron Petty Cash,Meals and Entertainment
+2025-01-19,,657.800,Petty Cash,Hand Tools
+2025-02-01,,10000.000,Enron Petty Cash,Enron Gas
+2025-02-17,,5000.000,Enron Petty Cash,Meals and Entertainment
+2025-02-17,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-02-17,Highway 2000,1100.000,Petty Cash,Highway Toll — Highway 2000
+2025-02-17,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-01-21,Tank Weld Metals,19000.000,Petty Cash,Construction Materials — Tank Weld Metals
+2025-02-21,,22712.500,Enron Petty Cash,Insurance
+2025-02-22,,5000.000,Enron Petty Cash,Enron Gas
+2025-03-03,,900.000,Enron Petty Cash,Hand Tools
+2025-03-05,Highway 2000,730.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-04,Highway 2000,730.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-04,,5000.000,Enron Petty Cash,Enron Gas
+2025-02-01,,10000.000,Enron Petty Cash,Enron Gas
+2023-11-13,,84112.000,Veron Petty Cash,Service and repair
+2024-07-01,,60972.000,Veron Petty Cash,Service and repair
+2023-11-06,,148998.000,Veron Petty Cash,Service and repair
+2025-03-03,,1500.000,Veron Petty Cash,Telephone Expense
+2025-03-03,,14618.000,Veron Petty Cash,Meals and Entertainment
+2025-01-27,,3420.000,Veron Petty Cash,Generator gas
+2025-02-10,,730.000,Veron Petty Cash,Highway Toll
+2025-01-27,,3000.000,Veron Petty Cash,Veron Gas
+2025-03-04,,630.000,Veron Petty Cash,Construction Materials
+2025-03-03,,730.000,Veron Petty Cash,Highway Toll
+2025-02-24,,1100.000,Veron Petty Cash,Highway Toll
+2025-02-21,,390.000,Veron Petty Cash,Highway Toll
+2025-03-07,,1100.000,Veron Petty Cash,Highway Toll
+2025-03-07,,390.000,Veron Petty Cash,Highway Toll
+2025-03-07,,3000.000,Veron Petty Cash,Veron Gas
+2025-02-06,,38500.000,Veron Petty Cash,Accountants Payment
+2025-02-06,Zoho,28500.000,Veron Petty Cash,Software — Zoho
+2025-03-10,,470.000,Veron Petty Cash,Highway Toll
+2025-03-10,,390.000,Veron Petty Cash,Highway Toll
+2025-03-10,,8000.000,Veron Petty Cash,Veron Gas
+2025-03-10,,364.860,Veron Petty Cash,Meals and Entertainment
+2025-03-03,,5000.000,Enron Petty Cash,Enron Gas
+2025-03-21,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-01-17,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-03,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-14,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-20,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-03,Highway 2000,730.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-11,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-18,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-10,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-14,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-14,,3000.000,Enron Petty Cash,Construction Materials
+2025-03-17,,1700.000,Enron Petty Cash,Service and repair
+2025-03-17,,7000.000,Enron Petty Cash,Enron Gas
+2025-02-28,,700.000,Enron Petty Cash,Service and repair
+2025-03-14,,7000.000,Enron Petty Cash,Enron Gas
+2025-03-03,Mackville Total service station,5000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-03-10,,15500.000,Enron Petty Cash,Meals and Entertainment
+2025-03-10,,4295.890,Enron Petty Cash,Meals and Entertainment
+2025-03-28,,5000.000,Enron Petty Cash,Enron Gas
+2025-03-23,,3000.000,Enron Petty Cash,Enron Gas
+2025-03-22,,400.000,Enron Petty Cash,Meals and Entertainment
+2025-03-24,,3519.090,Enron Petty Cash,Meals and Entertainment
+2025-03-19,,10000.000,Enron Petty Cash,Enron Gas
+2025-03-20,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-21,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-27,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-24,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-03-24,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-24,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-21,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-27,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-03-20,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-22,,65000.000,Enron Petty Cash,Construction Materials
+2025-03-20,,1880.000,Enron Petty Cash,Meals and Entertainment
+2025-03-04,,20000.000,Enron Petty Cash,Firearm License
+2025-01-13,,40000.000,Enron Petty Cash,Office Supplies
+2025-04-13,W&B ENTERPRISE,21000.000,Enron Petty Cash,Construction Materials — W&B ENTERPRISE
+2025-03-31,,7973.990,Petty Cash,Meals and Entertainment
+2025-04-11,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-05,,2103.470,Enron Petty Cash,Hand Tools
+2025-04-04,,2600.000,Enron Petty Cash,Meals and Entertainment
+2025-04-07,,5652.400,Enron Petty Cash,Meals and Entertainment
+2025-03-31,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-07,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-07,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-02,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-04,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-03,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-03-31,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-04,,5000.000,Enron Petty Cash,Enron Gas
+2025-04-11,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-04-06,,5000.000,Enron Petty Cash,Enron Gas
+2025-03-31,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-04-07,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-04-16,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-28,Highway 2000,240.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-28,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-16,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-01,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-23,,3100.000,Enron Petty Cash,Meals and Entertainment
+2025-04-28,Shoppers Delite,4170.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-05-01,Mackville Total service station,5000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-05-02,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-04-25,,8000.000,Enron Petty Cash,Enron Gas
+2025-04-30,,179.950,Enron Petty Cash,Construction Materials
+2025-04-25,,3150.000,Enron Petty Cash,Meals and Entertainment
+2025-04-25,,1950.000,Enron Petty Cash,Meals and Entertainment
+2025-04-22,,2100.000,Enron Petty Cash,Service and repair
+2025-04-16,Shoppers Delite,1188.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-04-14,,7000.000,Enron Petty Cash,Enron Gas
+2025-04-14,,5919.980,Enron Petty Cash,Hand Tools
+2025-04-16,,5000.000,Enron Petty Cash,Enron Gas
+2025-03-31,,9532.650,Enron Petty Cash,Meals and Entertainment
+2025-05-05,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-15,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-12,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-04-14,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-09,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-09,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-05,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-05,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-05,,7000.000,Enron Petty Cash,Meals and Entertainment
+2025-05-16,,1580.000,Enron Petty Cash,Meals and Entertainment
+2025-05-16,,5000.000,Enron Petty Cash,Enron Gas
+2025-05-13,,1790.000,Enron Petty Cash,Construction Materials
+2025-05-16,,6760.000,Enron Petty Cash,Meals and Entertainment
+2025-05-13,,3530.000,Enron Petty Cash,Hand Tools
+2025-05-05,,6000.000,Enron Petty Cash,Enron Gas
+2025-05-13,,1890.000,Enron Petty Cash,Meals and Entertainment
+2025-05-09,,2400.000,Enron Petty Cash,Meals and Entertainment
+2025-05-11,,8000.000,Enron Petty Cash,Enron Gas
+2025-05-13,,7000.000,Enron Petty Cash,Enron Gas
+2025-04-14,,7710.000,Enron Petty Cash,Meals and Entertainment
+2025-05-14,,1360.000,Enron Petty Cash,Meals and Entertainment
+2025-05-22,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-05-19,,7000.000,Enron Petty Cash,Enron Gas
+2025-05-22,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-19,Highway 2000,240.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-22,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-20,Shoppers Delite,6000.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-05-16,W&B ENTERPRISE,14000.000,Enron Petty Cash,Construction Materials — W&B ENTERPRISE
+2025-05-28,,19262.500,Enron Petty Cash,Uncategorized
+2025-05-27,,12500.000,Enron Petty Cash,MV Licence Duty Licence for 12 months. 2025/06 - 2026/05
+2025-05-26,,7000.000,Enron Petty Cash,unlead 90
+2025-05-30,,1100.000,Enron Petty Cash,FARE.. JMD Payment: CASH JMD
+2025-05-26,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-19,,1100.000,Enron Petty Cash,FARE.. JMD Payment: CASH JMD
+2025-05-30,Highway 2000,240.000,Enron Petty Cash,FARE. JMD JMD
+2025-05-26,,1360.000,Enron Petty Cash,Beef Patty
+2025-05-20,,1282.000,Enron Petty Cash,"PVC WATER PIPE 1/2"" - 20FT (#900011201)"
+2025-06-09,Highway 2000,350.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-05-26,Shoppers Delite,4986.670,Enron Petty Cash,Wa a Grape Flavoured 600 TGCT
+2025-06-09,,730.000,Enron Petty Cash,Meals and Entertainment
+2025-06-09,Shoppers Delite,10199.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-06-13,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-08,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-08,,10000.000,Enron Petty Cash,Enron Gas
+2025-06-11,,6300.000,Enron Petty Cash,Hand Tools
+2025-06-02,,7000.000,Enron Petty Cash,Enron Gas
+2025-06-13,,5000.000,Enron Petty Cash,Enron Gas
+2025-06-11,,2500.000,Enron Petty Cash,Construction Materials
+2025-06-14,,4000.000,Enron Petty Cash,Telephone Expense
+2025-06-23,,3573.540,Enron Petty Cash,Meals and Entertainment
+2025-06-19,Shoppers Delite,3375.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-06-26,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-23,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-27,Shoppers Delite,1000.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-06-27,Mackville Total service station,6000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-06-28,,5000.000,Enron Petty Cash,Enron Gas
+2025-06-17,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-23,,8000.000,Enron Petty Cash,Enron Gas
+2025-06-27,Highway 2000,470.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-12,,8000.000,Enron Petty Cash,Enron Gas
+2025-06-27,Highway 2000,6500.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-06-17,Shoppers Delite,9704.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-07-02,,2650.010,Enron Petty Cash,Hand Tools
+2025-06-30,,6892.020,Enron Petty Cash,Meals and Entertainment
+2025-07-02,,900.000,Enron Petty Cash,Hand Tools
+2025-06-30,,8000.000,Enron Petty Cash,Enron Gas
+2025-07-04,,4000.000,Enron Petty Cash,Enron Gas
+2025-06-30,,5000.000,Enron Petty Cash,Highway Toll
+2025-06-30,,370.000,Enron Petty Cash,Highway Toll
+2025-07-08,Shoppers Delite,6300.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-07-14,Highway 2000,370.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-18,,7000.000,Enron Petty Cash,Enron Gas
+2025-07-16,,747.500,Enron Petty Cash,Construction Materials
+2025-07-07,,8000.000,Enron Petty Cash,Enron Gas
+2025-07-11,Mackville Total service station,7000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-07-18,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-14,,1300.000,Enron Petty Cash,Meals and Entertainment
+2025-07-14,Highway 2000,5000.000,Enron Petty Cash,Vehicle License — Highway 2000
+2025-07-14,,2199.630,Enron Petty Cash,Hand Tools
+2025-07-13,,8000.000,Enron Petty Cash,Enron Gas
+2025-07-06,,10125.750,Veron Petty Cash,Construction Materials
+2025-07-18,,1978.000,Enron Petty Cash,Meals and Entertainment
+2025-07-14,,5804.000,Enron Petty Cash,Meals and Entertainment
+2025-07-21,,625.000,Enron Petty Cash,Telephone Expense
+2025-07-21,,625.000,Enron Petty Cash,Telephone Expense
+2025-07-21,,625.000,Enron Petty Cash,Telephone Expense
+2025-07-21,,625.000,Enron Petty Cash,Telephone Expense
+2025-07-21,,625.000,Enron Petty Cash,Telephone Expense
+2025-07-30,,20000.000,Enron Petty Cash,Firearm License
+2025-07-29,W&B ENTERPRISE,3500.000,Enron Petty Cash,Construction Materials — W&B ENTERPRISE
+2025-07-29,,16160.380,Enron Petty Cash,Meals and Entertainment
+2025-07-29,,3552.830,Enron Petty Cash,Meals and Entertainment
+2025-07-30,Highway 2000,660.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-01,,5000.000,Enron Petty Cash,Enron Gas
+2025-07-29,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-01,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-01,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-08,,1050.000,Enron Petty Cash,Highway Toll
+2025-07-08,Highway 2000,1000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-08,Highway 2000,2000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-27,,8000.000,Enron Petty Cash,Enron Gas
+2025-07-27,,8000.000,Enron Petty Cash,Enron Gas
+2025-07-21,Highway 2000,4100.000,Enron Petty Cash,Vehicle License — Highway 2000
+2025-07-21,Highway 2000,4100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-26,,2000.000,Enron Petty Cash,Service and repair
+2025-07-25,,8090.000,Enron Petty Cash,Meals and Entertainment
+2025-07-24,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-07-26,,700.000,Enron Petty Cash,Service and repair
+2025-05-26,,2631.200,Veron Petty Cash,Construction Materials
+2025-06-06,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-06-16,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-06-23,,1100.000,Veron Petty Cash,Hand Tools
+2025-04-11,,1340.000,Veron Petty Cash,Construction Materials
+2025-08-09,,1524.840,Veron Petty Cash,Construction Materials
+2025-05-02,,3000.000,Veron Petty Cash,Enron Gas
+2025-05-02,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-05-02,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-04-08,,600.000,Veron Petty Cash,Hand Tools
+2025-07-27,,4151.270,Veron Petty Cash,Meals and Entertainment
+2025-03-03,,1350.000,Veron Petty Cash,Hand Tools
+2025-03-31,,2000.000,Veron Petty Cash,Meals and Entertainment
+2025-04-10,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-04-09,,1100.000,Veron Petty Cash,Highway Toll
+2025-03-19,,1742.220,Veron Petty Cash,Meals and Entertainment
+2025-03-21,,7300.000,Veron Petty Cash,Construction Materials
+2025-03-19,Highway 2000,390.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-03-19,Highway 2000,1100.000,Veron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,,6000.000,Enron Petty Cash,Hand Tools
+2025-08-13,,1003.950,Enron Petty Cash,Hand Tools
+2025-08-18,Shoppers Delite,4608.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-08-11,,4058.200,Enron Petty Cash,Meals and Entertainment
+2025-08-08,,30000.000,Enron Petty Cash,Construction Materials
+2025-08-07,,870.000,Enron Petty Cash,Meals and Entertainment
+2025-08-18,,2282.470,Enron Petty Cash,Construction Materials
+2025-08-22,,883.000,Enron Petty Cash,Meals and Entertainment
+2025-08-22,,6000.000,Enron Petty Cash,Enron Gas
+2025-08-07,,5000.000,Enron Petty Cash,Enron Gas
+2025-08-15,,5000.000,Enron Petty Cash,Enron Gas
+2025-08-04,,5000.000,Enron Petty Cash,Enron Gas
+2025-08-18,,10000.000,Enron Petty Cash,Enron Gas
+2025-08-08,,8000.000,Enron Petty Cash,Enron Gas
+2025-08-21,Mackville Total service station,5000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-08-11,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,Highway 2000,5000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-08,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-13,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-11,Highway 2000,240.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-15,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-15,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-21,Highway 2000,1100.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-18,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-22,Highway 2000,390.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-16,,1400.000,Enron Petty Cash,Meals and Entertainment
+2025-07-14,,17590.000,Enron Petty Cash,Construction Materials
+2025-08-28,,770.000,Enron Petty Cash,Meals and Entertainment
+2025-08-25,,54000.000,Enron Petty Cash,Service and repair
+2025-08-28,Shoppers Delite,2257.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-08-26,,6000.000,Enron Petty Cash,Enron Gas
+2025-08-25,,8000.000,Enron Petty Cash,Enron Gas
+2025-08-26,,35.000,Petty Cash,Meals and Entertainment
+2025-08-26,Highway 2000,530.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-25,Highway 2000,790.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-25,Highway 2000,790.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-25,Highway 2000,380.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-26,Highway 2000,1200.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-25,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-26,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-26,Highway 2000,1000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-26,Highway 2000,5000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-26,Highway 2000,1200.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-08-26,,5000.000,Enron Petty Cash,Enron Gas
+2025-08-28,,6000.000,Petty Cash,Enron Gas
+2025-08-28,,3237.250,Enron Petty Cash,Hand Tools
+2025-08-26,,679.950,Enron Petty Cash,Meals and Entertainment
+2025-09-01,,1100.000,Enron Petty Cash,Hand Tools
+2025-09-05,,16000.000,Enron Petty Cash,Service and repair
+2025-09-03,,2840.000,Enron Petty Cash,Meals and Entertainment
+2025-09-03,,4000.000,Enron Petty Cash,Enron Gas
+2025-09-19,Mackville Total service station,5000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-09-22,,5000.000,Enron Petty Cash,Enron Gas
+2025-09-12,,5000.000,Enron Petty Cash,Enron Gas
+2025-09-08,,8000.000,Enron Petty Cash,Enron Gas
+2025-09-15,,6000.000,Enron Petty Cash,Enron Gas
+2025-09-25,,5000.000,Enron Petty Cash,Enron Gas
+2025-09-02,,6000.000,Enron Petty Cash,Enron Gas
+2025-09-23,,3000.000,Enron Petty Cash,Enron Gas
+2025-09-23,Shoppers Delite,10587.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-09-15,,17392.670,Enron Petty Cash,Meals and Entertainment
+2025-09-10,,5000.000,Enron Petty Cash,Enron Gas
+2025-09-12,,5000.000,Veron Petty Cash,Construction Materials
+2025-09-10,,5000.000,Enron Petty Cash,Enron Gas
+2025-09-05,,430.000,Enron Petty Cash,Highway Toll
+2025-09-05,,6000.000,Enron Petty Cash,Enron Gas
+2025-09-08,,2200.000,Enron Petty Cash,Construction Materials
+2025-09-08,,2100.000,Enron Petty Cash,Construction Materials
+2025-10-14,,3200.000,Enron Petty Cash,Hand Tools
+2025-10-10,,2000.000,Enron Petty Cash,Hand Tools
+2025-10-10,,1570.000,Enron Petty Cash,Meals and Entertainment
+2025-10-10,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-10-09,,400.000,Enron Petty Cash,Meals and Entertainment
+2025-10-13,Highway 2000,1180.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-10-11,,1400.000,Enron Petty Cash,Meals and Entertainment
+2025-10-13,Highway 2000,5000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-10-13,Shoppers Delite,15610.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-09-30,Highway 2000,10000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-10-06,,10000.000,Enron Petty Cash,Enron Gas
+2025-10-01,,4270.000,Enron Petty Cash,Meals and Entertainment
+2025-10-05,,5000.000,Enron Petty Cash,Enron Gas
+2025-09-30,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-09-30,,10000.000,Enron Petty Cash,Enron Gas
+2025-09-30,,2000.000,Enron Petty Cash,Enron Gas
+2025-09-30,,1180.000,Enron Petty Cash,Highway Toll
+2025-09-30,,1660.000,Enron Petty Cash,Meals and Entertainment
+2025-09-01,,4000.000,Enron Petty Cash,Enron Gas
+2025-10-06,,17441.180,Enron Petty Cash,Meals and Entertainment
+2025-10-17,Shoppers Delite,1317.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-10-15,,3000.000,Enron Petty Cash,Enron Gas
+2025-10-15,,1400.000,Enron Petty Cash,Hand Tools
+2025-10-20,,2089.990,Enron Petty Cash,Meals and Entertainment
+2025-10-17,Mackville Total service station,6000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-10-15,,1400.000,Enron Petty Cash,Meals and Entertainment
+2025-10-21,,6000.000,Enron Petty Cash,Enron Gas
+2025-10-23,,6000.000,Enron Petty Cash,Enron Gas
+2025-10-21,Shoppers Delite,20201.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-10-17,,1890.000,Enron Petty Cash,Meals and Entertainment
+2025-10-18,,2477.620,Enron Petty Cash,Construction Materials
+2025-10-21,,81.000,Enron Petty Cash,Meals and Entertainment
+2025-10-24,,625.000,Enron Petty Cash,Telephone Expense
+2025-10-24,,625.000,Enron Petty Cash,Telephone Expense
+2025-10-24,,4000.000,Enron Petty Cash,Enron Gas
+2025-08-21,,3750.000,Enron Petty Cash,Telephone Expense
+2025-11-04,,6000.000,Enron Petty Cash,Construction Materials
+2025-11-13,,7000.000,Enron Petty Cash,Enron Gas
+2025-11-04,,5000.000,Enron Petty Cash,Enron Gas
+2025-11-13,Shoppers Delite,5632.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-11-04,,7010.000,Enron Petty Cash,Meals and Entertainment
+2025-11-09,,1500.000,Enron Petty Cash,Meals and Entertainment
+2025-11-24,,1650.000,Enron Petty Cash,Hand Tools
+2025-11-17,,5000.000,Enron Petty Cash,Enron Gas
+2025-10-31,,6150.000,Enron Petty Cash,Meals and Entertainment
+2025-11-24,Highway 2000,1200.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-11-18,,5550.000,Enron Petty Cash,Construction Materials
+2025-11-18,,10000.000,Enron Petty Cash,Enron Gas
+2025-11-04,,2530.000,Enron Petty Cash,Meals and Entertainment
+2025-11-24,,8000.000,Enron Petty Cash,Enron Gas
+2025-11-24,Shoppers Delite,6658.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-11-30,,4000.000,Enron Petty Cash,Enron Gas
+2025-11-24,Shoppers Delite,1251.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-11-09,,6000.000,Enron Petty Cash,Enron Gas
+2025-11-17,Highway 2000,1200.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-11-24,,8982.000,Enron Petty Cash,Meals and Entertainment
+2025-08-21,,4000.000,Enron Petty Cash,Telephone Expense
+2025-11-30,,4000.000,Enron Petty Cash,Telephone Expense
+2025-12-18,Shoppers Delite,7000.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-12-16,Shoppers Delite,5000.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-12-15,,3000.000,Enron Petty Cash,Enron Gas
+2025-12-19,,2500.000,Enron Petty Cash,Meals and Entertainment
+2025-12-05,,2900.000,Enron Petty Cash,Meals and Entertainment
+2025-12-08,Shoppers Delite,13600.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-12-12,,10600.000,Enron Petty Cash,Meals and Entertainment
+2025-12-02,Shoppers Delite,2100.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-12-11,Shoppers Delite,3200.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2025-12-10,,2400.000,Enron Petty Cash,Hand Tools
+2025-12-02,,4100.000,Enron Petty Cash,Hand Tools
+2025-12-08,Highway 2000,1200.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-02,Highway 2000,430.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-05,Highway 2000,430.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-12,Highway 2000,5000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-12,Highway 2000,780.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-01,,1400.000,Enron Petty Cash,Meals and Entertainment
+2025-12-01,,1100.000,Enron Petty Cash,Meals and Entertainment
+2025-12-05,Mackville Total service station,5000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2025-12-12,,7000.000,Enron Petty Cash,Enron Gas
+2025-12-08,,7000.000,Enron Petty Cash,Enron Gas
+2025-12-01,,2000.000,Enron Petty Cash,Enron Gas
+2025-12-02,,5000.000,Enron Petty Cash,Enron Gas
+2025-12-06,,5000.000,Enron Petty Cash,Enron Gas
+2026-01-18,,2620.000,Enron Petty Cash,Meals and Entertainment
+2026-01-09,,1200.000,Enron Petty Cash,Hand Tools
+2026-01-15,,4000.000,Enron Petty Cash,Enron Gas
+2026-01-10,,5000.000,Enron Petty Cash,Enron Gas
+2026-01-05,,2800.000,Enron Petty Cash,Meals and Entertainment
+2026-01-02,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-06,,358.000,Enron Petty Cash,Construction Materials
+2026-01-07,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-18,,17500.000,Enron Petty Cash,Service and repair
+2026-01-07,,5000.000,Enron Petty Cash,Enron Gas
+2026-01-10,Highway 2000,2050.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-08,Highway 2000,2000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-08,Highway 2000,260.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-06,Highway 2000,2000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-10,Highway 2000,2050.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-05,,300.000,Enron Petty Cash,Meals and Entertainment
+2026-01-02,Highway 2000,3000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-02,Highway 2000,1000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-27,,4573.550,Enron Petty Cash,Hand Tools
+2026-01-26,,850.000,Enron Petty Cash,Meals and Entertainment
+2026-01-29,,5000.000,Enron Petty Cash,Highway Toll
+2026-01-29,Highway 2000,780.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-30,,5000.000,Enron Petty Cash,Enron Gas
+2026-01-30,,2200.000,Enron Petty Cash,Meals and Entertainment
+2026-01-26,Shoppers Delite,1088.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2026-01-26,Highway 2000,780.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-26,Highway 2000,10000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-25,Mackville Total service station,9613.200,Enron Petty Cash,Enron Gas — Mackville Total service station
+2026-01-19,Shoppers Delite,4030.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2026-01-25,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-22,,8769.000,Enron Petty Cash,Enron Gas
+2026-01-18,,8303.000,Enron Petty Cash,Enron Gas
+2026-01-07,,3000.000,Enron Petty Cash,Meals and Entertainment
+2026-01-30,,22500.000,Enron Petty Cash,Construction Materials
+2026-01-20,,150.000,Enron Petty Cash,Meals and Entertainment
+2026-01-20,,1400.000,Enron Petty Cash,Meals and Entertainment
+2026-02-10,,3500.000,Enron Petty Cash,Meals and Entertainment
+2026-02-16,Shoppers Delite,6082.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2026-02-16,,1450.000,Enron Petty Cash,Meals and Entertainment
+2026-02-15,,270.000,Enron Petty Cash,Highway Toll
+2026-02-20,,7000.000,Enron Petty Cash,Enron Gas
+2026-02-14,,1035.000,Enron Petty Cash,Meals and Entertainment
+2026-02-17,,7000.000,Enron Petty Cash,Enron Gas
+2026-02-10,Highway 2000,780.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-16,,3000.000,Enron Petty Cash,Enron Gas
+2026-02-02,Highway 2000,6000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-16,Highway 2000,1000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-16,Highway 2000,6000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-09,Mackville Total service station,8800.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2026-02-09,,3500.000,Enron Petty Cash,Hand Tools
+2026-02-12,,8500.000,Enron Petty Cash,Enron Gas
+2026-02-09,,1680.000,Enron Petty Cash,Hand Tools
+2026-01-31,,680.000,Enron Petty Cash,Hand Tools
+2026-02-04,Mackville Total service station,7600.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2026-02-06,,8300.000,Enron Petty Cash,Enron Gas
+2026-02-04,Highway 2000,780.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-04,Highway 2000,5000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-04,Highway 2000,2000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-31,,7000.000,Enron Petty Cash,Enron Gas
+2026-02-16,,780.000,Enron Petty Cash,Highway Toll
+2026-02-19,,35000.000,Current Account JMD,Tool And Equipment Rental
+2026-02-19,,5000.000,Veron Petty Cash,Veron Gas
+2026-02-02,,20800.000,Veron Petty Cash,Hand Tools
+2026-02-13,,1200.000,Veron Petty Cash,Highway Toll
+2026-02-17,,5000.000,Veron Petty Cash,Veron Gas
+2026-02-03,,1180.000,Veron Petty Cash,Highway Toll
+2026-03-15,,5000.000,Veron Petty Cash,Veron Gas
+2026-02-13,,430.000,Veron Petty Cash,Veron Gas
+2026-02-12,,1200.000,Veron Petty Cash,Highway Toll
+2026-02-11,,5000.000,Veron Petty Cash,Veron Gas
+2026-02-21,,600.000,Veron Petty Cash,Cost of Goods Sold
+2026-02-20,,90000.000,Veron Petty Cash,Cost of Goods Sold
+2026-02-21,,2600.000,Veron Petty Cash,Cost of Goods Sold
+2025-10-16,,240.000,Veron Petty Cash,Highway Toll
+2026-02-03,,4140.000,Veron Petty Cash,Cost of Goods Sold
+2026-01-01,,5000.000,Veron Petty Cash,Veron Gas
+2026-02-04,,3680.000,Veron Petty Cash,Cost of Goods Sold
+2025-12-30,,4842.880,Veron Petty Cash,Cost of Goods Sold
+2025-12-11,,1200.000,Veron Petty Cash,Highway Toll
+2025-12-15,,430.000,Veron Petty Cash,Highway Toll
+2025-12-19,,6000.000,Veron Petty Cash,Veron Gas
+2026-02-15,,430.000,Veron Petty Cash,Highway Toll
+2025-11-19,,1200.000,Veron Petty Cash,Highway Toll
+2025-10-18,,1200.000,Veron Petty Cash,Highway Toll
+2025-10-18,,790.000,Veron Petty Cash,Highway Toll
+2025-12-19,,1200.000,Veron Petty Cash,Highway Toll
+2026-02-09,,2200.000,Veron Petty Cash,Cost of Goods Sold
+2026-02-05,,5000.000,Veron Petty Cash,Veron Gas
+2025-12-20,,2050.000,Veron Petty Cash,Highway Toll
+2025-10-12,,1200.000,Veron Petty Cash,Highway Toll
+2025-12-20,,2050.000,Veron Petty Cash,Highway Toll
+2026-01-27,,1200.000,Veron Petty Cash,Highway Toll
+2026-01-15,,450.000,Veron Petty Cash,Cost of Goods Sold
+2025-12-15,,530.000,Veron Petty Cash,Highway Toll
+2026-01-19,,1200.000,Veron Petty Cash,Highway Toll
+2026-01-08,,430.000,Veron Petty Cash,Highway Toll
+2026-02-10,,1200.000,Veron Petty Cash,Highway Toll
+2026-02-02,,3000.000,Veron Petty Cash,Veron Gas
+2026-01-27,,5000.000,Veron Petty Cash,Highway Toll
+2026-02-10,,8820.500,Veron Petty Cash,Cost of Goods Sold
+2026-01-04,,5000.000,Veron Petty Cash,Veron Gas
+2026-01-19,,5000.000,Veron Petty Cash,Veron Gas
+2026-02-26,,1600.000,Veron Petty Cash,Cost of Goods Sold
+2026-02-10,,1200.000,Veron Petty Cash,Highway Toll
+2026-01-30,,1200.000,Veron Petty Cash,Highway Toll
+2025-12-12,,5000.000,Veron Petty Cash,Veron Gas
+2025-12-20,,5000.000,Veron Petty Cash,Cost of Goods Sold
+2025-12-27,,5000.000,Veron Petty Cash,Veron Gas
+2026-01-03,,430.000,Veron Petty Cash,Highway Toll
+2026-01-08,,1200.000,Veron Petty Cash,Highway Toll
+2026-01-08,,3000.000,Veron Petty Cash,Veron Gas
+2026-02-10,,3600.000,Veron Petty Cash,Meals and Entertainment
+2026-01-01,,295.000,Veron Petty Cash,Cost of Goods Sold
+2026-01-08,,1200.000,Veron Petty Cash,Highway Toll
+2026-02-10,,5000.000,Veron Petty Cash,Veron Gas
+2025-12-27,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-02,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-22,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-01-02,Highway 2000,700.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-14,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-12-22,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2025-10-08,Highway 2000,2000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-10,,5000.000,Enron Petty Cash,Enron Gas
+2025-12-27,,3050.020,Enron Petty Cash,Meals and Entertainment
+2025-12-29,,1800.000,Enron Petty Cash,Meals and Entertainment
+2026-03-11,,1400.000,Enron Petty Cash,Meals and Entertainment
+2026-03-12,,2400.000,Enron Petty Cash,Meals and Entertainment
+2026-03-13,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-12,,7000.000,Enron Petty Cash,Enron Gas
+2026-02-26,,2000.000,Enron Petty Cash,Hand Tools
+2026-03-04,,4030.900,Enron Petty Cash,Meals and Entertainment
+2026-03-06,,4000.000,Enron Petty Cash,Enron Gas
+2026-03-04,,20000.000,Enron Petty Cash,Firearm License
+2026-03-07,Highway 2000,260.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-07,Highway 2000,2000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-23,,9000.000,Enron Petty Cash,Enron Gas
+2026-03-02,,600.000,Enron Petty Cash,Hand Tools
+2026-03-02,Shoppers Delite,8301.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2026-02-28,,1173.000,Enron Petty Cash,Construction Materials
+2026-02-26,,6000.000,Enron Petty Cash,Enron Gas
+2026-02-24,Highway 2000,5000.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-02-03,,1030.000,Enron Petty Cash,Meals and Entertainment
+2026-02-24,Highway 2000,790.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-11,,8000.000,Enron Petty Cash,Highway Toll
+2026-03-04,,5000.000,Enron Petty Cash,Enron Gas
+2026-03-09,,4000.000,Enron Petty Cash,Enron Gas
+2026-03-09,Shoppers Delite,307.000,Enron Petty Cash,Meals and Entertainment — Shoppers Delite
+2026-02-27,Mackville Total service station,10000.000,Enron Petty Cash,Enron Gas — Mackville Total service station
+2026-03-11,,1560.000,Enron Petty Cash,Meals and Entertainment
+2026-03-03,,5000.000,Enron Petty Cash,Enron Gas
+2026-03-13,Highway 2000,270.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-04,Highway 2000,790.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-03-07,,1900.000,Enron Petty Cash,Meals and Entertainment
+2026-03-11,,1200.000,Enron Petty Cash,Meals and Entertainment
+2026-02-28,,17185.300,Enron Petty Cash,Construction Materials
+2026-03-10,Highway 2000,275.000,Enron Petty Cash,Highway Toll — Highway 2000
+2026-05-03,,24337.140,Enron Petty Cash,Meals and Entertainment
+2026-03-19,,1130.000,Enron Petty Cash,Meals and Entertainment
+2026-03-21,,1548.360,Enron Petty Cash,Meals and Entertainment
+2026-03-26,,7000.000,Enron Petty Cash,Enron Gas
+2026-03-18,,1050.000,Enron Petty Cash,Hand Tools
+2026-02-04,,4000.000,Enron Petty Cash,Enron Gas
+2026-03-22,,886.900,Enron Petty Cash,Meals and Entertainment
+2026-03-27,,1649.870,Enron Petty Cash,Meals and Entertainment
+2026-03-30,,5000.000,Enron Petty Cash,Enron Gas
+2026-03-16,,4000.000,Enron Petty Cash,Enron Gas
+2026-03-19,,2827.410,Enron Petty Cash,Meals and Entertainment
+2026-03-22,,5000.000,Enron Petty Cash,Enron Gas
+2026-04-04,,1747.390,Enron Petty Cash,Meals and Entertainment
+2026-03-30,,1150.000,Enron Petty Cash,Meals and Entertainment
+2026-04-04,,270.000,Enron Petty Cash,Highway Toll
+2026-03-29,,1304.350,Enron Petty Cash,Meals and Entertainment
+2026-03-16,,1400.000,Enron Petty Cash,Meals and Entertainment
+2026-03-17,,6000.000,Enron Petty Cash,Enron Gas
+2026-03-17,,1013.000,Enron Petty Cash,Meals and Entertainment
+2026-03-16,,1014.000,Enron Petty Cash,Meals and Entertainment
+2026-03-26,,1917.000,Enron Petty Cash,Meals and Entertainment
+2026-04-01,,790.000,Enron Petty Cash,Highway Toll
+2026-03-28,,270.000,Enron Petty Cash,Highway Toll
+2026-03-31,,790.000,Enron Petty Cash,Highway Toll
+2026-03-31,,270.000,Enron Petty Cash,Highway Toll
+2026-03-23,,790.000,Enron Petty Cash,Highway Toll
+2026-03-23,,790.000,Enron Petty Cash,Highway Toll
+2026-04-01,,2000.000,Enron Petty Cash,Highway Toll
+2026-03-28,,270.000,Enron Petty Cash,Highway Toll
+2026-03-16,,270.000,Enron Petty Cash,Highway Toll
+2026-03-17,,790.000,Enron Petty Cash,Highway Toll
+2026-03-03,,790.000,Enron Petty Cash,Highway Toll
+2026-05-03,,270.000,Enron Petty Cash,Highway Toll
+2026-03-30,,270.000,Enron Petty Cash,Highway Toll
+2026-03-28,,270.000,Enron Petty Cash,Highway Toll
+2026-03-31,,270.000,Enron Petty Cash,Highway Toll
+2026-04-01,,790.000,Enron Petty Cash,Highway Toll
+2026-05-01,,790.000,Enron Petty Cash,Highway Toll
+2026-04-23,,10992.950,Enron Petty Cash,Construction Materials
+2026-04-09,,270.000,Enron Petty Cash,Highway Toll
+2026-04-18,,270.000,Enron Petty Cash,Highway Toll
+2026-04-20,,790.000,Enron Petty Cash,Highway Toll
+2026-04-10,,790.000,Enron Petty Cash,Highway Toll
+2026-04-02,,3000.000,Enron Petty Cash,Highway Toll
+2026-04-02,,790.000,Enron Petty Cash,Highway Toll
+2026-04-26,,1610.000,Enron Petty Cash,Hand Tools
+2026-04-26,,587.540,Enron Petty Cash,Meals and Entertainment
+2026-05-07,,5000.000,Enron Petty Cash,Enron Gas
+2026-04-25,,5000.000,Enron Petty Cash,Highway Toll
+2026-05-01,,5000.000,Enron Petty Cash,Highway Toll
+2026-04-27,,5000.000,Enron Petty Cash,Highway Toll
+2026-04-30,,3300.000,Enron Petty Cash,Construction Materials
+2026-04-14,,625.000,Enron Petty Cash,Telephone Expense
+2026-04-14,,625.000,Enron Petty Cash,Telephone Expense
+2026-05-12,,5000.000,Enron Petty Cash,Highway Toll
+2026-05-12,,780.000,Enron Petty Cash,Highway Toll
+2026-05-06,,270.000,Enron Petty Cash,Highway Toll
+2026-04-13,,5000.000,Enron Petty Cash,Highway Toll
+2026-05-18,,270.000,Enron Petty Cash,Highway Toll
+2026-05-08,,270.000,Enron Petty Cash,Highway Toll
+2026-05-17,,270.000,Enron Petty Cash,Highway Toll
+2026-05-17,,270.000,Enron Petty Cash,Highway Toll
+2026-05-16,,270.000,Enron Petty Cash,Highway Toll
+2026-05-15,,10000.000,Enron Petty Cash,Enron Gas
+2026-05-18,,10100.000,Enron Petty Cash,Enron Gas
+2026-05-12,,2170.000,Enron Petty Cash,Construction Materials
+2026-05-08,,1470.000,Enron Petty Cash,Meals and Entertainment
+2026-05-13,,8000.000,Enron Petty Cash,Enron Gas
+2026-04-13,,380.000,Enron Petty Cash,Meals and Entertainment
+2026-04-14,,1210.000,Enron Petty Cash,Meals and Entertainment
+2026-04-16,,7865.400,Enron Petty Cash,Enron Gas
+2026-04-16,,2082.000,Enron Petty Cash,Meals and Entertainment
+2026-04-12,,2826.090,Enron Petty Cash,Construction Materials
+2026-04-26,,2000.000,Enron Petty Cash,Meals and Entertainment
+2026-04-13,,8000.000,Enron Petty Cash,Enron Gas
+2026-04-21,,10000.000,Enron Petty Cash,Enron Gas
+2026-04-27,,6000.000,Enron Petty Cash,Construction Materials
+2026-04-29,,13008.920,Enron Petty Cash,Hand Tools

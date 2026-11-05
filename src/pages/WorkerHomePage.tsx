@@ -12,6 +12,7 @@ import { SCREEN_PPM, renderIdCardFace, renderQrCanvas, verifyUrl, type IdCardCom
 import { buildWhatsAppUrl } from "../lib/portalShare";
 import { weakPinReason, isPinShape } from "../../supabase/functions/_shared/workerPortal";
 import AddToHomeScreenTip from "../components/AddToHomeScreenTip";
+import WorkerClock from "../components/WorkerClock";
 import { useWorkerPortalManifest } from "../hooks/useWorkerPortalManifest";
 import { logoIconDataUrl } from "../lib/workerPortalIcon";
 import { isStandalone, neverShowTip, shouldShowHomeTip, takeFreshLogin, tipDismissedForever, type ManifestIcon } from "../lib/workerPortalInstall";
@@ -238,6 +239,7 @@ export default function WorkerHomePage() {
 
         {tab === "home" && (<>
           <h1 className="text-2xl font-bold text-slate-900">Hello {w.first_name}</h1>
+          <WorkerClock token={token.current!} onSessionEnded={endSession} />
           <div className="grid grid-cols-2 gap-3">
             <Tile label="Paid this month" value={fmtJMD(stats?.month)} sub={`${stats?.month_count ?? 0} payment${stats?.month_count === 1 ? "" : "s"}`} />
             <Tile label="Paid this year" value={fmtJMD(stats?.year)} sub={`${stats?.year_count ?? 0} payment${stats?.year_count === 1 ? "" : "s"}`} />

@@ -63,6 +63,7 @@ import AccountsReceivablePage from "./pages/AccountsReceivablePage";
 import AccountsPayablePage    from "./pages/AccountsPayablePage";
 import FieldPaymentsPage      from "./pages/FieldPaymentsPage";
 import WorkersPage            from "./pages/WorkersPage";
+import AttendancePage         from "./pages/AttendancePage";
 import SuppliersPage          from "./pages/SuppliersPage";
 import ReportsPage            from "./pages/ReportsPage";
 import ContractsPage          from "./pages/ContractsPage";
@@ -363,6 +364,7 @@ export default function App() {
 
               {/* People */}
               <Route path="/workers"                 element={<RoleGuard allowedRoles={[...WORKERS_PAGE_ROLES]}><WorkersPage /></RoleGuard>} />
+              <Route path="/attendance"              element={<RoleGuard allowedRoles={["director", "admin", "supervisor", "site_user", "office_user"]}><AttendancePage /></RoleGuard>} />
               <Route path="/suppliers"               element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><SuppliersPage /></RoleGuard>} />
               <Route path="/staff-portal"            element={<RoleGuard allowedRoles={["director","admin"]}><StaffPortalManagerPage /></RoleGuard>} />
 

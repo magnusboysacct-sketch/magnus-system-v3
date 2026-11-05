@@ -1,0 +1,1815 @@
+From a545209c66c61780832f8551f3db95307b81774f Mon Sep 17 00:00:00 2001
+From: Veron Williams <magnusboysacct@gmail.com>
+Date: Tue, 13 Oct 2026 10:33:44 -0500
+Subject: [PATCH] Contact-scoped client portal access (backend) + per-user
+ password hashing
+
+Adds a second kind of portal login tied to one client contact. It sees only
+the projects assigned to that contact (projects.contact_id), re-checked live
+on every call. The client-level (manager) login is unchanged.
+
+- Migration 20260936000000: contact_id on client_portal_sessions;
+  client_contact_portal_access (no browser grants); _portal_session_ctx and
+  _portal_can_see_project helpers; _portal_session_client now manager-only,
+  so invoices, contracts, estimates, change-order approval and reviews are
+  closed to contacts without further changes; contact-aware get_portal_data,
+  get_portal_comments, insert_portal_comment, log_portal_event; staff RPCs to
+  invite, check and revoke a project's contact.
+- Contract edge functions refuse contact sessions.
+- client-portal-login / client-password-reset: PBKDF2-SHA256 with per-user
+  salt (legacy shared-salt hashes upgraded on next login), contact
+  setup/login/reset, strict email validation (closes a PostgREST .or()
+  filter injection in the email lookups).
+- supabase/tests/portal-access: local-Postgres harness; manager outputs
+  identical before/after; 71 leakage tests; 21 password tests.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DpyMC7wNSLZyjCRiSGNmSu
+---
+ supabase/functions/_shared/portalPassword.ts  | 110 ++++
+ .../functions/client-password-reset/index.ts  | 144 +++--
+ .../functions/client-portal-login/index.ts    | 349 +++++++++---
+ .../portal-contract-signature-urls/index.ts   |   2 +
+ .../functions/portal-sign-contract/index.ts   |   2 +
+ ...936000000_contact_scoped_portal_access.sql | 523 ++++++++++++++++++
+ supabase/tests/portal-access/capture.sql      |  14 +
+ supabase/tests/portal-access/fixtures.sql     |  61 ++
+ supabase/tests/portal-access/leak_tests.sql   | 169 ++++++
+ supabase/tests/portal-access/password_test.ts |  21 +
+ supabase/tests/portal-access/run.sh           |  25 +
+ supabase/tests/portal-access/stub.sql         |  41 ++
+ 12 files changed, 1333 insertions(+), 128 deletions(-)
+ create mode 100644 supabase/functions/_shared/portalPassword.ts
+ create mode 100644 supabase/migrations/20260936000000_contact_scoped_portal_access.sql
+ create mode 100644 supabase/tests/portal-access/capture.sql
+ create mode 100644 supabase/tests/portal-access/fixtures.sql
+ create mode 100644 supabase/tests/portal-access/leak_tests.sql
+ create mode 100644 supabase/tests/portal-access/password_test.ts
+ create mode 100755 supabase/tests/portal-access/run.sh
+ create mode 100644 supabase/tests/portal-access/stub.sql
+
+diff --git a/supabase/functions/_shared/portalPassword.ts b/supabase/functions/_shared/portalPassword.ts
+new file mode 100644
+index 0000000..94d14e5
+--- /dev/null
++++ b/supabase/functions/_shared/portalPassword.ts
+@@ -0,0 +1,110 @@
++// supabase/functions/_shared/portalPassword.ts
++//
++// Client-portal password hashing, shared by client-portal-login and client-password-reset.
++//
++// New format: "pbkdf2_sha256$<iterations>$<salt b64>$<hash b64>" — PBKDF2-SHA256 with a random 16-byte salt per password.
++// The iteration count travels inside each hash, so it can be raised later without breaking existing passwords.
++//
++// Legacy format: hex SHA-256 of (password + "magnus_portal_2026") — one shared salt for every user. verifyPassword() still
++// accepts it and reports needsRehash, and the login function then replaces it with the new format. No-one has to reset.
++
++const SCHEME = "pbkdf2_sha256";
++const ITERATIONS = 600_000; // OWASP 2023 recommendation for PBKDF2-SHA256 (~0.3 s per hash)
++const SALT_BYTES = 16;
++const HASH_BITS = 256;
++const LEGACY_SALT = "magnus_portal_2026";
++
++const enc = new TextEncoder();
++
++function toB64(bytes: Uint8Array): string {
++  let s = "";
++  for (const b of bytes) s += String.fromCharCode(b);
++  return btoa(s);
++}
++
++function fromB64(s: string): Uint8Array {
++  const bin = atob(s);
++  const out = new Uint8Array(bin.length);
++  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
++  return out;
++}
++
++function hex(bytes: Uint8Array): string {
++  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
++}
++
++// Compares without stopping at the first difference, so timing doesn't reveal how much of a hash matched.
++function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
++  if (a.length !== b.length) return false;
++  let diff = 0;
++  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
++  return diff === 0;
++}
++
++async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
++  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
++  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations }, key, HASH_BITS);
++  return new Uint8Array(bits);
++}
++
++async function legacyHash(password: string): Promise<string> {
++  const digest = await crypto.subtle.digest("SHA-256", enc.encode(password + LEGACY_SALT));
++  return hex(new Uint8Array(digest));
++}
++
++export async function hashPassword(password: string): Promise<string> {
++  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
++  const hash = await pbkdf2(password, salt, ITERATIONS);
++  return `${SCHEME}$${ITERATIONS}$${toB64(salt)}$${toB64(hash)}`;
++}
++
++export type VerifyResult = { ok: boolean; needsRehash: boolean };
++
++export async function verifyPassword(password: string, stored: string | null | undefined): Promise<VerifyResult> {
++  const fail = { ok: false, needsRehash: false };
++  if (!stored || typeof stored !== "string") return fail;
++
++  if (stored.startsWith(`${SCHEME}$`)) {
++    const parts = stored.split("$");
++    if (parts.length !== 4) return fail;
++    const iterations = Number(parts[1]);
++    if (!Number.isInteger(iterations) || iterations < 1 || iterations > 10_000_000) return fail;
++    let salt: Uint8Array, expected: Uint8Array;
++    try {
++      salt = fromB64(parts[2]);
++      expected = fromB64(parts[3]);
++    } catch {
++      return fail;
++    }
++    const actual = await pbkdf2(password, salt, iterations);
++    const ok = equalBytes(actual, expected);
++    return { ok, needsRehash: ok && iterations < ITERATIONS };
++  }
++
++  // Legacy shared-salt hash (64 hex chars)
++  if (/^[0-9a-f]{64}$/i.test(stored)) {
++    const actual = await legacyHash(password);
++    const ok = equalBytes(enc.encode(actual), enc.encode(stored.toLowerCase()));
++    return { ok, needsRehash: ok };
++  }
++
++  return fail;
++}
++
++// Strict enough to keep the address safe inside a PostgREST filter (no commas, brackets, quotes or spaces) while accepting
++// ordinary addresses. Callers must reject anything that fails this before using the address in a query.
++export function normalizeEmail(raw: unknown): string | null {
++  const email = String(raw ?? "").trim().toLowerCase();
++  if (email.length > 254) return null;
++  if (!/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(email)) return null;
++  return email;
++}
++
++export function generateToken(): string {
++  return hex(crypto.getRandomValues(new Uint8Array(32)));
++}
++
++// Constant-time string comparison for tokens
++export function equalStrings(a: string, b: string): boolean {
++  return equalBytes(enc.encode(a), enc.encode(b));
++}
+diff --git a/supabase/functions/client-password-reset/index.ts b/supabase/functions/client-password-reset/index.ts
+index cd57a3a..ef0a567 100644
+--- a/supabase/functions/client-password-reset/index.ts
++++ b/supabase/functions/client-password-reset/index.ts
+@@ -1,4 +1,9 @@
++// Client-portal password reset. Handles both kinds of portal login:
++//   - the client (manager) login, stored on clients (unchanged behaviour);
++//   - a contact login, stored on client_contact_portal_access (reset link carries kind=contact).
++// The client login is always looked up first, the same order client-portal-login uses.
+ import { createClient } from "npm:@supabase/supabase-js@2";
++import { equalStrings, generateToken, hashPassword, normalizeEmail } from "../_shared/portalPassword.ts";
+ 
+ const corsHeaders = {
+   "Access-Control-Allow-Origin": "*",
+@@ -14,6 +19,7 @@ type RequestBody = {
+   email?: string;
+   token?: string;
+   newPassword?: string;
++  kind?: "manager" | "contact";
+ };
+ 
+ function jsonResponse(data: unknown, status = 200) {
+@@ -31,20 +37,6 @@ function esc(value: unknown) {
+     .replaceAll('"', "&quot;");
+ }
+ 
+-async function hashPassword(p: string): Promise<string> {
+-  const data = new TextEncoder().encode(p + "magnus_portal_2026");
+-  const hash = await crypto.subtle.digest("SHA-256", data);
+-  return Array.from(new Uint8Array(hash))
+-    .map((b) => b.toString(16).padStart(2, "0"))
+-    .join("");
+-}
+-
+-function generateToken(): string {
+-  const bytes = new Uint8Array(32);
+-  crypto.getRandomValues(bytes);
+-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+-}
+-
+ Deno.serve(async (req) => {
+   if (req.method === "OPTIONS") {
+     return new Response("ok", { headers: corsHeaders });
+@@ -75,9 +67,10 @@ Deno.serve(async (req) => {
+     const action = body.action || "request";
+ 
+     if (action === "request") {
+-      const email = String(body.email || "").trim().toLowerCase();
++      // normalizeEmail() also keeps the value safe inside the .or() filter below.
++      const email = normalizeEmail(body.email);
+ 
+-      if (!email || !email.includes("@")) {
++      if (!email) {
+         return jsonResponse({ error: "A valid email is required" }, 400);
+       }
+ 
+@@ -86,42 +79,79 @@ Deno.serve(async (req) => {
+         return jsonResponse({ error: "Missing RESEND_API_KEY secret" }, 500);
+       }
+ 
+-      const { data: client } = await supabaseAdmin
+-        .from("clients")
+-        .select("id, name, contact_name, email, portal_email, portal_enabled, company_id")
+-        .or(`email.eq.${email},portal_email.eq.${email}`)
+-        .eq("portal_enabled", true)
+-        .maybeSingle();
+-
+       const genericResponse = {
+         success: true,
+         message: "If an account exists for this email, a reset link has been sent.",
+       };
+ 
+-      if (!client) {
+-        return jsonResponse(genericResponse);
+-      }
+-
+       const token = generateToken();
+       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+ 
+-      const { error: updateError } = await supabaseAdmin
++      // Who is resetting: the client login first, else a live contact login with that email.
++      let kind: "manager" | "contact" = "manager";
++      let companyId: string | null = null;
++
++      const { data: client } = await supabaseAdmin
+         .from("clients")
+-        .update({
+-          portal_reset_token: token,
+-          portal_reset_expires_at: expiresAt,
+-        })
+-        .eq("id", client.id);
++        .select("id, name, contact_name, email, portal_email, portal_enabled, company_id")
++        .or(`email.eq.${email},portal_email.eq.${email}`)
++        .eq("portal_enabled", true)
++        .maybeSingle();
+ 
+-      if (updateError) {
+-        console.error("Failed to store reset token:", updateError.message);
+-        return jsonResponse(genericResponse);
++      if (client) {
++        const { error: updateError } = await supabaseAdmin
++          .from("clients")
++          .update({
++            portal_reset_token: token,
++            portal_reset_expires_at: expiresAt,
++          })
++          .eq("id", client.id);
++
++        if (updateError) {
++          console.error("Failed to store reset token:", updateError.message);
++          return jsonResponse(genericResponse);
++        }
++        companyId = client.company_id;
++      } else {
++        const { data: access } = await supabaseAdmin
++          .from("client_contact_portal_access")
++          .select("contact_id, company_id")
++          .eq("portal_email", email)
++          .eq("enabled", true)
++          .is("revoked_at", null)
++          .maybeSingle();
++        if (!access) {
++          return jsonResponse(genericResponse);
++        }
++        // The contact's client must still have the portal switched on
++        const { data: contact } = await supabaseAdmin
++          .from("client_contacts")
++          .select("client_id")
++          .eq("id", access.contact_id)
++          .maybeSingle();
++        const { data: contactClient } = contact
++          ? await supabaseAdmin.from("clients").select("id").eq("id", contact.client_id).eq("portal_enabled", true).maybeSingle()
++          : { data: null };
++        if (!contactClient) {
++          return jsonResponse(genericResponse);
++        }
++
++        const { error: updateError } = await supabaseAdmin
++          .from("client_contact_portal_access")
++          .update({ reset_token: token, reset_expires_at: expiresAt, updated_at: new Date().toISOString() })
++          .eq("contact_id", access.contact_id);
++        if (updateError) {
++          console.error("Failed to store contact reset token:", updateError.message);
++          return jsonResponse(genericResponse);
++        }
++        kind = "contact";
++        companyId = access.company_id;
+       }
+ 
+       const { data: company } = await supabaseAdmin
+         .from("company_settings")
+         .select("company_name, logo_url, tagline, website")
+-        .eq("company_id", client.company_id)
++        .eq("company_id", companyId)
+         .maybeSingle();
+ 
+       const companyName = company?.company_name || "Your Company";
+@@ -129,7 +159,7 @@ Deno.serve(async (req) => {
+       const companyTagline = company?.tagline || "Secure. Simple. Built for Construction.";
+       const companyWebsite = company?.website || APP_URL;
+ 
+-      const resetUrl = `${APP_URL.replace(/\/+$/, "")}/client-reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
++      const resetUrl = `${APP_URL.replace(/\/+$/, "")}/client-reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}${kind === "contact" ? "&kind=contact" : ""}`;
+ 
+       const html = `
+         <div style="font-family:Arial,sans-serif;background:#f6f6f6;padding:30px;">
+@@ -192,7 +222,7 @@ Deno.serve(async (req) => {
+     }
+ 
+     if (action === "confirm") {
+-      const email = String(body.email || "").trim().toLowerCase();
++      const email = normalizeEmail(body.email);
+       const token = String(body.token || "").trim();
+       const newPassword = String(body.newPassword || "");
+ 
+@@ -204,6 +234,40 @@ Deno.serve(async (req) => {
+         return jsonResponse({ error: "Password must be at least 6 characters" }, 400);
+       }
+ 
++      // Contact login reset (link carries kind=contact)
++      if (body.kind === "contact") {
++        const { data: access } = await supabaseAdmin
++          .from("client_contact_portal_access")
++          .select("contact_id, reset_token, reset_expires_at")
++          .eq("portal_email", email)
++          .eq("enabled", true)
++          .is("revoked_at", null)
++          .maybeSingle();
++
++        if (!access || !access.reset_token || !equalStrings(access.reset_token, token)) {
++          return jsonResponse({ error: "Invalid or expired reset link." }, 400);
++        }
++        if (!access.reset_expires_at || new Date(access.reset_expires_at).getTime() < Date.now()) {
++          return jsonResponse({ error: "This reset link has expired. Please request a new one." }, 400);
++        }
++
++        const now = new Date().toISOString();
++        const { data: updated, error: updateError } = await supabaseAdmin
++          .from("client_contact_portal_access")
++          .update({ password_hash: await hashPassword(newPassword), activated_at: now,
++                    reset_token: null, reset_expires_at: null, updated_at: now })
++          .eq("contact_id", access.contact_id)
++          .eq("reset_token", access.reset_token) // one use only
++          .select("contact_id");
++        if (updateError) return jsonResponse({ error: updateError.message }, 500);
++        if (!updated?.length) return jsonResponse({ error: "Invalid or expired reset link." }, 400);
++
++        // A new password signs the contact out everywhere else.
++        await supabaseAdmin.from("client_portal_sessions").delete().eq("contact_id", access.contact_id);
++
++        return jsonResponse({ success: true, message: "Password updated successfully. You can now sign in." });
++      }
++
+       const { data: client, error: lookupError } = await supabaseAdmin
+         .from("clients")
+         .select("id, portal_reset_token, portal_reset_expires_at")
+@@ -215,7 +279,7 @@ Deno.serve(async (req) => {
+         return jsonResponse({ error: "Invalid or expired reset link." }, 400);
+       }
+ 
+-      if (!client.portal_reset_token || client.portal_reset_token !== token) {
++      if (!client.portal_reset_token || !equalStrings(client.portal_reset_token, token)) {
+         return jsonResponse({ error: "Invalid or expired reset link." }, 400);
+       }
+ 
+diff --git a/supabase/functions/client-portal-login/index.ts b/supabase/functions/client-portal-login/index.ts
+index e418b29..3fd19e6 100644
+--- a/supabase/functions/client-portal-login/index.ts
++++ b/supabase/functions/client-portal-login/index.ts
+@@ -18,9 +18,20 @@
+ //     token), so it — not an arbitrary submitted email — is what has to
+ //     stay authoritative for who's being set up or logged in.
+ //
+-// Both families follow the same structure as client-password-reset/index.ts
+-// (service-role key, portal_password_hash never leaves this function).
++// Contact logins (one field officer, only their assigned projects):
++//   - contactLinkSetup/contactLinkLogin anchor on the contact's own invite
++//     token (client_contact_portal_access.portal_token), for the same reason
++//     as the magic-link actions above.
++//   - lookup/setup/login also accept a contact's email, but ONLY when no
++//     client login uses that email: the client (manager) login always wins.
++//   - A contact session carries contact_id; the database functions use it to
++//     show only that contact's projects (see migration 20260936000000).
++//
++// Passwords use _shared/portalPassword.ts (PBKDF2, per-user salt). Old
++// shared-salt hashes still work and are upgraded on the next good login.
++// portal_password_hash / password_hash never leave this function.
+ import { createClient } from "npm:@supabase/supabase-js@2";
++import { generateToken, hashPassword, normalizeEmail, verifyPassword } from "../_shared/portalPassword.ts";
+ 
+ const corsHeaders = {
+   "Access-Control-Allow-Origin": "*",
+@@ -28,13 +39,35 @@ const corsHeaders = {
+   "Access-Control-Allow-Methods": "POST, OPTIONS",
+ };
+ 
++type Action =
++  | "lookup" | "setup" | "login"
++  | "magicLinkSetup" | "magicLinkLogin"
++  | "contactLinkSetup" | "contactLinkLogin";
++
+ type RequestBody = {
+-  action?: "lookup" | "setup" | "login" | "magicLinkSetup" | "magicLinkLogin";
++  action?: Action;
+   email?: string;
+   password?: string;
+   portalToken?: string;
+ };
+ 
++type ClientRow = {
++  id: string;
++  name: string | null;
++  contact_name: string | null;
++  portal_password_hash: string | null;
++  portal_activated_at: string | null;
++  portal_enabled: boolean | null;
++};
++
++type ContactLogin = {
++  contactId: string;
++  clientId: string;
++  name: string | null;
++  passwordHash: string | null;
++  activatedAt: string | null;
++};
++
+ function jsonResponse(data: unknown, status = 200) {
+   return new Response(JSON.stringify(data), {
+     status,
+@@ -42,18 +75,6 @@ function jsonResponse(data: unknown, status = 200) {
+   });
+ }
+ 
+-async function hashPassword(p: string): Promise<string> {
+-  const data = new TextEncoder().encode(p + "magnus_portal_2026");
+-  const hash = await crypto.subtle.digest("SHA-256", data);
+-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+-}
+-
+-function generateToken(): string {
+-  const bytes = new Uint8Array(32);
+-  crypto.getRandomValues(bytes);
+-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+-}
+-
+ Deno.serve(async (req) => {
+   if (req.method === "OPTIONS") {
+     return new Response("ok", { headers: corsHeaders });
+@@ -76,42 +97,100 @@ Deno.serve(async (req) => {
+       auth: { persistSession: false, autoRefreshToken: false },
+     });
+ 
+-    const body = (await req.json()) as RequestBody;
++    let body: RequestBody;
++    try {
++      body = (await req.json()) as RequestBody;
++    } catch (_err) {
++      return jsonResponse({ error: "Invalid request" }, 400);
++    }
+     const action = body.action;
+-    const isMagicLinkAction = action === "magicLinkSetup" || action === "magicLinkLogin";
+-
+-    // Email is the identity anchor for lookup/setup/login; the magic-link
+-    // actions anchor on portalToken instead (magicLinkSetup still accepts
+-    // an email, but only as a value to store, never to locate the row —
+-    // see the header comment).
+-    const email = String(body.email || "").trim().toLowerCase();
+-    if (!isMagicLinkAction && (!email || !email.includes("@"))) {
++    const isTokenAction =
++      action === "magicLinkSetup" || action === "magicLinkLogin" ||
++      action === "contactLinkSetup" || action === "contactLinkLogin";
++
++    // Email is the identity anchor for lookup/setup/login; the link actions
++    // anchor on portalToken instead (the setup actions still accept an
++    // email, but only as a value to store, never to locate the row — see the
++    // header comment). normalizeEmail() also keeps the value safe to place
++    // inside the PostgREST filters below: a raw value containing commas or
++    // brackets could otherwise add conditions to them.
++    const rawEmail = String(body.email || "").trim();
++    const email = rawEmail ? normalizeEmail(rawEmail) : null;
++    if (!isTokenAction && !email) {
+       return jsonResponse({ error: "A valid email is required" }, 400);
+     }
++    if (isTokenAction && rawEmail && !email) {
++      return jsonResponse({ error: "Please enter a valid email address." }, 400);
++    }
+ 
+     const portalToken = String(body.portalToken || "").trim();
+-    if (isMagicLinkAction && !portalToken) {
++    if (isTokenAction && !portalToken) {
+       return jsonResponse({ error: "Missing portal link token" }, 400);
+     }
+ 
+-    async function findClient() {
++    const CLIENT_COLS = "id, name, contact_name, portal_password_hash, portal_activated_at, portal_enabled";
++
++    async function findClient(): Promise<ClientRow | null> {
++      if (!email) return null;
+       const { data } = await supabaseAdmin
+         .from("clients")
+-        .select("id, name, contact_name, portal_password_hash, portal_activated_at, portal_enabled")
++        .select(CLIENT_COLS)
+         .or(`email.eq.${email},portal_email.eq.${email}`)
+         .eq("portal_enabled", true)
+         .maybeSingle();
+-      return data;
++      return (data as ClientRow) ?? null;
+     }
+ 
+-    async function findClientByToken() {
++    async function findClientByToken(): Promise<ClientRow | null> {
+       const { data } = await supabaseAdmin
+         .from("clients")
+-        .select("id, name, contact_name, portal_password_hash, portal_activated_at, portal_enabled")
++        .select(CLIENT_COLS)
+         .eq("portal_token", portalToken)
+         .eq("portal_enabled", true)
+         .maybeSingle();
+-      return data;
++      return (data as ClientRow) ?? null;
++    }
++
++    // A contact login, but only while it is usable: enabled, not revoked, the
++    // contact still exists, and the contact's CURRENT client has the portal on.
++    // The session is always bound to that current client.
++    async function findContactLogin(by: "email" | "token"): Promise<ContactLogin | null> {
++      let q = supabaseAdmin
++        .from("client_contact_portal_access")
++        .select("contact_id, password_hash, activated_at, enabled, revoked_at")
++        .eq("enabled", true)
++        .is("revoked_at", null);
++      if (by === "email") {
++        if (!email) return null;
++        q = q.eq("portal_email", email);
++      } else {
++        q = q.eq("portal_token", portalToken);
++      }
++      const { data: access } = await q.maybeSingle();
++      if (!access) return null;
++
++      const { data: contact } = await supabaseAdmin
++        .from("client_contacts")
++        .select("id, name, client_id")
++        .eq("id", access.contact_id)
++        .maybeSingle();
++      if (!contact) return null;
++
++      const { data: client } = await supabaseAdmin
++        .from("clients")
++        .select("id")
++        .eq("id", contact.client_id)
++        .eq("portal_enabled", true)
++        .maybeSingle();
++      if (!client) return null;
++
++      return {
++        contactId: contact.id,
++        clientId: client.id,
++        name: contact.name,
++        passwordHash: access.password_hash,
++        activatedAt: access.activated_at,
++      };
+     }
+ 
+     // Best-effort audit trail (client_portal_activity). Fire-and-forget: the
+@@ -119,7 +198,12 @@ Deno.serve(async (req) => {
+     // provides it) keeps it alive after the response is sent, so logging never
+     // delays, blocks, or alters a login response. `action` is read from the
+     // enclosing request scope.
+-    function logPortalActivity(clientId: string, eventType: string, sessionId: string | null = null) {
++    function logPortalActivity(
++      clientId: string,
++      eventType: string,
++      sessionId: string | null = null,
++      contactId: string | null = null,
++    ) {
+       const run = (async () => {
+         try {
+           const { data: c } = await supabaseAdmin
+@@ -134,6 +218,7 @@ Deno.serve(async (req) => {
+           await supabaseAdmin.from("client_portal_activity").insert({
+             company_id: c?.company_id ?? null,
+             client_id: clientId,
++            ...(contactId ? { contact_id: contactId } : {}),
+             session_id: sessionId ? String(sessionId) : null,
+             event_type: eventType,
+             ip_address: ip,
+@@ -151,10 +236,12 @@ Deno.serve(async (req) => {
+       }
+     }
+ 
+-    async function createSession(clientId: string) {
++    async function createSession(clientId: string, contactId: string | null = null) {
+       const sessionToken = generateToken();
+       const { data: sessionRows, error } = await supabaseAdmin.from("client_portal_sessions").insert({
+         client_id: clientId,
++        // Only contact logins set this; the manager login's rows stay exactly as before.
++        ...(contactId ? { contact_id: contactId } : {}),
+         session_token: sessionToken,
+         // Read from the request itself rather than trusting a
+         // client-submitted field — matches how the browser can't be
+@@ -162,30 +249,24 @@ Deno.serve(async (req) => {
+         device_info: (req.headers.get("user-agent") || "").slice(0, 200),
+       }).select("id");
+       if (error) return { error };
+-      logPortalActivity(clientId, "login", sessionRows?.[0]?.id ?? null);
++      logPortalActivity(clientId, "login", sessionRows?.[0]?.id ?? null, contactId);
+       return { sessionToken };
+     }
+ 
+-    if (action === "lookup") {
+-      const client = await findClient();
+-      if (!client) {
+-        return jsonResponse({ error: "No account found with that email. Contact your contractor." }, 404);
+-      }
+-      // Only what the UI needs to decide setup-vs-login and greet the
+-      // client by name — never portal_password_hash, never the row id.
+-      return jsonResponse({
+-        mode: client.portal_activated_at ? "login" : "setup",
+-        displayName: client.contact_name || client.name,
+-      });
++    function sessionResponse(sessionToken: string, contactId: string | null = null) {
++      return jsonResponse(
++        contactId ? { sessionToken, kind: "contact", contactId } : { sessionToken, kind: "manager" },
++      );
+     }
+ 
+     const password = String(body.password || "");
+ 
+-    if (action === "setup") {
++    // ── Shared steps ──────────────────────────────────────────────────
++
++    async function setupClient(client: ClientRow | null, storeEmail: string | null) {
+       if (password.length < 6) {
+         return jsonResponse({ error: "Password must be at least 6 characters." }, 400);
+       }
+-      const client = await findClient();
+       if (!client) {
+         return jsonResponse({ error: "No account found with that email." }, 404);
+       }
+@@ -194,90 +275,182 @@ Deno.serve(async (req) => {
+       }
+ 
+       const hash = await hashPassword(password);
+-      const { error: updateError } = await supabaseAdmin
++      const { data: updated, error: updateError } = await supabaseAdmin
+         .from("clients")
+         .update({
+-          portal_email: email,
++          ...(storeEmail ? { portal_email: storeEmail } : {}),
+           portal_password_hash: hash,
+           portal_activated_at: new Date().toISOString(),
+         })
+-        .eq("id", client.id);
++        .eq("id", client.id)
++        .is("portal_activated_at", null) // two setups racing: only the first can win
++        .select("id");
+       if (updateError) return jsonResponse({ error: updateError.message }, 500);
++      if (!updated?.length) {
++        return jsonResponse({ error: "This account is already set up. Please sign in instead." }, 409);
++      }
+ 
+       const session = await createSession(client.id);
+-      if ("error" in session) return jsonResponse({ error: session.error.message }, 500);
+-      return jsonResponse({ sessionToken: session.sessionToken });
++      if ("error" in session) return jsonResponse({ error: session.error?.message }, 500);
++      return sessionResponse(session.sessionToken);
+     }
+ 
+-    if (action === "login") {
++    async function loginClient(client: ClientRow | null, notFound: string) {
+       if (!password) {
+         return jsonResponse({ error: "Please enter your password." }, 400);
+       }
+-      const client = await findClient();
+       if (!client) {
+-        return jsonResponse({ error: "No account found with that email." }, 404);
++        return jsonResponse({ error: notFound }, 404);
+       }
+ 
+-      const hash = await hashPassword(password);
+-      if (hash !== client.portal_password_hash) {
++      const check = await verifyPassword(password, client.portal_password_hash);
++      if (!check.ok) {
+         logPortalActivity(client.id, "login_failed");
+         return jsonResponse({ error: "Incorrect password. Please try again." }, 401);
+       }
++      if (check.needsRehash) {
++        // Silent upgrade from the old shared-salt hash; a failure here must not block the login.
++        const { error } = await supabaseAdmin
++          .from("clients")
++          .update({ portal_password_hash: await hashPassword(password) })
++          .eq("id", client.id)
++          .eq("portal_password_hash", client.portal_password_hash);
++        if (error) console.error("client-portal-login: hash upgrade failed:", error.message);
++      }
+ 
+       const session = await createSession(client.id);
+-      if ("error" in session) return jsonResponse({ error: session.error.message }, 500);
+-      return jsonResponse({ sessionToken: session.sessionToken });
++      if ("error" in session) return jsonResponse({ error: session.error?.message }, 500);
++      return sessionResponse(session.sessionToken);
+     }
+ 
+-    if (action === "magicLinkSetup") {
++    async function setupContact(login: ContactLogin | null, storeEmail: string | null, notFound: string) {
+       if (password.length < 6) {
+         return jsonResponse({ error: "Password must be at least 6 characters." }, 400);
+       }
+-      const client = await findClientByToken();
+-      if (!client) {
+-        return jsonResponse({ error: "This portal link is invalid or has been disabled." }, 404);
++      if (!login) {
++        return jsonResponse({ error: notFound }, 404);
+       }
+-      if (client.portal_activated_at) {
++      if (login.activatedAt) {
+         return jsonResponse({ error: "This account is already set up. Please sign in instead." }, 409);
+       }
+ 
+-      const hash = await hashPassword(password);
+-      const { error: updateError } = await supabaseAdmin
+-        .from("clients")
++      const { data: updated, error: updateError } = await supabaseAdmin
++        .from("client_contact_portal_access")
+         .update({
+-          // Only when a value was actually submitted — the magic-link
+-          // setup form pre-fills this from the client's existing email,
+-          // but doesn't require re-typing it.
+-          ...(email ? { portal_email: email } : {}),
+-          portal_password_hash: hash,
+-          portal_activated_at: new Date().toISOString(),
++          ...(storeEmail ? { portal_email: storeEmail } : {}),
++          password_hash: await hashPassword(password),
++          activated_at: new Date().toISOString(),
++          updated_at: new Date().toISOString(),
+         })
+-        .eq("id", client.id);
+-      if (updateError) return jsonResponse({ error: updateError.message }, 500);
++        .eq("contact_id", login.contactId)
++        .is("activated_at", null)
++        .select("contact_id");
++      if (updateError) {
++        // The only expected failure: that email already signs in to another contact login.
++        const taken = String(updateError.code) === "23505";
++        return jsonResponse(
++          { error: taken ? "That email is already used by another portal login. Please use a different one." : updateError.message },
++          taken ? 409 : 500,
++        );
++      }
++      if (!updated?.length) {
++        return jsonResponse({ error: "This account is already set up. Please sign in instead." }, 409);
++      }
+ 
+-      const session = await createSession(client.id);
+-      if ("error" in session) return jsonResponse({ error: session.error.message }, 500);
+-      return jsonResponse({ sessionToken: session.sessionToken });
++      const session = await createSession(login.clientId, login.contactId);
++      if ("error" in session) return jsonResponse({ error: session.error?.message }, 500);
++      return sessionResponse(session.sessionToken, login.contactId);
+     }
+ 
+-    if (action === "magicLinkLogin") {
++    async function loginContact(login: ContactLogin | null, notFound: string) {
+       if (!password) {
+         return jsonResponse({ error: "Please enter your password." }, 400);
+       }
+-      const client = await findClientByToken();
+-      if (!client) {
+-        return jsonResponse({ error: "This portal link is invalid or has been disabled." }, 404);
++      if (!login) {
++        return jsonResponse({ error: notFound }, 404);
++      }
++      if (!login.activatedAt) {
++        return jsonResponse({ error: "This account isn't set up yet. Open your invite link to create a password." }, 409);
+       }
+ 
+-      const hash = await hashPassword(password);
+-      if (hash !== client.portal_password_hash) {
+-        logPortalActivity(client.id, "login_failed");
++      const check = await verifyPassword(password, login.passwordHash);
++      if (!check.ok) {
++        logPortalActivity(login.clientId, "login_failed", null, login.contactId);
+         return jsonResponse({ error: "Incorrect password. Please try again." }, 401);
+       }
++      if (check.needsRehash) {
++        const { error } = await supabaseAdmin
++          .from("client_contact_portal_access")
++          .update({ password_hash: await hashPassword(password), updated_at: new Date().toISOString() })
++          .eq("contact_id", login.contactId)
++          .eq("password_hash", login.passwordHash);
++        if (error) console.error("client-portal-login: contact hash upgrade failed:", error.message);
++      }
+ 
+-      const session = await createSession(client.id);
+-      if ("error" in session) return jsonResponse({ error: session.error.message }, 500);
+-      return jsonResponse({ sessionToken: session.sessionToken });
++      const session = await createSession(login.clientId, login.contactId);
++      if ("error" in session) return jsonResponse({ error: session.error?.message }, 500);
++      return sessionResponse(session.sessionToken, login.contactId);
++    }
++
++    // ── Email-anchored actions (ClientLoginPage.tsx). Client login first, then a contact login. ──
++
++    if (action === "lookup") {
++      const client = await findClient();
++      if (client) {
++        // Only what the UI needs to decide setup-vs-login and greet the
++        // client by name — never portal_password_hash, never the row id.
++        return jsonResponse({
++          mode: client.portal_activated_at ? "login" : "setup",
++          displayName: client.contact_name || client.name,
++          kind: "manager",
++        });
++      }
++      const contact = await findContactLogin("email");
++      if (contact) {
++        return jsonResponse({
++          mode: contact.activatedAt ? "login" : "setup",
++          displayName: contact.name,
++          kind: "contact",
++        });
++      }
++      return jsonResponse({ error: "No account found with that email. Contact your contractor." }, 404);
++    }
++
++    if (action === "setup") {
++      const client = await findClient();
++      if (client) return setupClient(client, email);
++      return setupContact(await findContactLogin("email"), null, "No account found with that email.");
++    }
++
++    if (action === "login") {
++      const client = await findClient();
++      if (client) return loginClient(client, "No account found with that email.");
++      return loginContact(await findContactLogin("email"), "No account found with that email.");
++    }
++
++    // ── Client magic link (/portal/:token) ──
++
++    if (action === "magicLinkSetup") {
++      // Only store an email when one was actually submitted — the magic-link
++      // setup form pre-fills this from the client's existing email, but
++      // doesn't require re-typing it.
++      const client = await findClientByToken();
++      if (!client) return jsonResponse({ error: "This portal link is invalid or has been disabled." }, 404);
++      return setupClient(client, email);
++    }
++
++    if (action === "magicLinkLogin") {
++      return loginClient(await findClientByToken(), "This portal link is invalid or has been disabled.");
++    }
++
++    // ── Contact invite link (/portal/contact/:token) ──
++
++    if (action === "contactLinkSetup") {
++      return setupContact(await findContactLogin("token"), email, "This invite link is invalid or has been withdrawn.");
++    }
++
++    if (action === "contactLinkLogin") {
++      return loginContact(await findContactLogin("token"), "This invite link is invalid or has been withdrawn.");
+     }
+ 
+     return jsonResponse({ error: "Unknown action" }, 400);
+diff --git a/supabase/functions/portal-contract-signature-urls/index.ts b/supabase/functions/portal-contract-signature-urls/index.ts
+index 6f398d3..c19ec88 100644
+--- a/supabase/functions/portal-contract-signature-urls/index.ts
++++ b/supabase/functions/portal-contract-signature-urls/index.ts
+@@ -92,6 +92,8 @@ Deno.serve(async (req) => {
+       .select("id, client_id")
+       .eq("session_token", sessionToken)
+       .gt("expires_at", new Date().toISOString())
++      // Contracts are manager-only: a contact login (field officer) never gets past here.
++      .is("contact_id", null)
+       .maybeSingle();
+     if (sessErr) {
+       console.error("portal-contract-signature-urls session lookup failed:", sessErr.message);
+diff --git a/supabase/functions/portal-sign-contract/index.ts b/supabase/functions/portal-sign-contract/index.ts
+index dbbd386..76195f3 100644
+--- a/supabase/functions/portal-sign-contract/index.ts
++++ b/supabase/functions/portal-sign-contract/index.ts
+@@ -115,6 +115,8 @@ Deno.serve(async (req) => {
+       .select("id, client_id")
+       .eq("session_token", sessionToken)
+       .gt("expires_at", new Date().toISOString())
++      // Contracts are manager-only: a contact login (field officer) never gets past here.
++      .is("contact_id", null)
+       .maybeSingle();
+     if (sessErr) {
+       console.error("portal-sign-contract session lookup failed:", sessErr.message);
+diff --git a/supabase/migrations/20260936000000_contact_scoped_portal_access.sql b/supabase/migrations/20260936000000_contact_scoped_portal_access.sql
+new file mode 100644
+index 0000000..9fc8f13
+--- /dev/null
++++ b/supabase/migrations/20260936000000_contact_scoped_portal_access.sql
+@@ -0,0 +1,523 @@
++-- Contact-scoped client portal access.
++--
++-- A second kind of portal login, tied to ONE client contact (client_contacts). It only ever sees the projects that contact is
++-- assigned to (projects.contact_id), re-checked live on every call, so reassigning a project cuts the old contact off at once.
++-- The existing client-level login (the "manager view") is unchanged and still sees everything.
++--
++-- How it fails closed:
++--   * _portal_session_client() now returns NULL for a contact session. Everything that still uses it (invoices, contracts,
++--     contract schedule, estimates, change-order approval, reviews) is therefore manager-only without further changes.
++--   * The few functions a contact may use (get_portal_data, get_portal_comments, insert_portal_comment, log_portal_event)
++--     go through _portal_session_ctx() and _portal_can_see_project().
++--   * Contact credentials live in their own table that has no browser grants at all.
++-- The edge functions portal-sign-contract / portal-contract-signature-urls must also refuse sessions with a contact_id
++-- (changed in the same commit).
++BEGIN;
++
++-- 1. Which contact a session belongs to (NULL = the client-level manager login, exactly as today)
++ALTER TABLE public.client_portal_sessions
++  ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES public.client_contacts(id) ON DELETE CASCADE;
++CREATE INDEX IF NOT EXISTS idx_client_portal_sessions_contact_id
++  ON public.client_portal_sessions (contact_id) WHERE contact_id IS NOT NULL;
++
++-- Tighten grants found in the live check (RLS already blocks reads/writes, but not TRUNCATE on a direct connection).
++-- Nothing in the browser touches client_portal_sessions directly (only SECURITY DEFINER functions and the service-role
++-- edge functions do), and the anon key has no business with client_contacts at all.
++REVOKE ALL ON public.client_portal_sessions FROM anon, authenticated;
++REVOKE ALL ON public.client_contacts FROM anon;
++REVOKE TRUNCATE, TRIGGER, REFERENCES ON public.client_contacts FROM authenticated;
++
++-- Who wrote a portal message / did a portal action (NULL = manager login or staff)
++ALTER TABLE public.client_comments        ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES public.client_contacts(id) ON DELETE SET NULL;
++ALTER TABLE public.client_portal_activity ADD COLUMN IF NOT EXISTS contact_id uuid;  -- no FK: the log must outlive the contact
++
++-- 2. A contact's portal credentials. One row per contact. Never readable from the browser: staff use the RPCs below,
++--    logins go through the client-portal-login edge function (service role).
++CREATE TABLE IF NOT EXISTS public.client_contact_portal_access (
++  contact_id        uuid PRIMARY KEY REFERENCES public.client_contacts(id) ON DELETE CASCADE,
++  company_id        uuid NOT NULL REFERENCES public.companies(id),
++  portal_token      text NOT NULL UNIQUE,
++  portal_email      text,
++  password_hash     text,
++  activated_at      timestamptz,
++  enabled           boolean NOT NULL DEFAULT true,
++  revoked_at        timestamptz,
++  reset_token       text,
++  reset_expires_at  timestamptz,
++  invited_by        uuid,
++  invited_at        timestamptz NOT NULL DEFAULT now(),
++  created_at        timestamptz NOT NULL DEFAULT now(),
++  updated_at        timestamptz NOT NULL DEFAULT now()
++);
++
++-- Email sign-in needs an email to point at exactly one live contact login
++CREATE UNIQUE INDEX IF NOT EXISTS uq_client_contact_portal_access_email
++  ON public.client_contact_portal_access (lower(portal_email))
++  WHERE portal_email IS NOT NULL AND enabled;
++
++ALTER TABLE public.client_contact_portal_access ENABLE ROW LEVEL SECURITY;  -- and no policies: no direct access at all
++REVOKE ALL ON public.client_contact_portal_access FROM PUBLIC, anon, authenticated;
++
++-- 256 bits of randomness without depending on pgcrypto's schema location
++CREATE OR REPLACE FUNCTION public._portal_random_token()
++RETURNS text LANGUAGE sql VOLATILE
++SET search_path TO 'public', 'pg_temp'
++AS $$
++  SELECT replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
++$$;
++REVOKE ALL ON FUNCTION public._portal_random_token() FROM PUBLIC, anon, authenticated;
++
++-- 3. Session helpers (internal only)
++
++-- Everything about a valid session. A contact session is only valid while the contact still belongs to the session's client
++-- and their access is enabled, activated and not revoked. Either kind needs the client's portal to be on.
++CREATE OR REPLACE FUNCTION public._portal_session_ctx(p_session_token text)
++RETURNS TABLE (client_id uuid, contact_id uuid, session_id uuid, company_id uuid)
++LANGUAGE sql SECURITY DEFINER STABLE
++SET search_path TO 'public', 'pg_temp'
++AS $$
++  SELECT cps.client_id, cps.contact_id, cps.id, c.company_id
++  FROM client_portal_sessions cps
++  JOIN clients c ON c.id = cps.client_id
++  LEFT JOIN client_contacts cc ON cc.id = cps.contact_id
++  LEFT JOIN client_contact_portal_access a ON a.contact_id = cps.contact_id
++  WHERE p_session_token IS NOT NULL
++    AND btrim(p_session_token) <> ''
++    AND cps.session_token = p_session_token
++    AND cps.client_id IS NOT NULL
++    AND cps.expires_at > now()
++    AND c.portal_enabled = true
++    AND (cps.contact_id IS NULL
++         OR (cc.client_id = cps.client_id
++             AND a.enabled = true
++             AND a.activated_at IS NOT NULL
++             AND a.revoked_at IS NULL))
++  LIMIT 1;
++$$;
++
++-- MANAGER sessions only. Returns NULL for a contact session, which makes every function built on it manager-only.
++CREATE OR REPLACE FUNCTION public._portal_session_client(p_session_token text)
++RETURNS uuid
++LANGUAGE sql SECURITY DEFINER STABLE
++SET search_path TO 'public', 'pg_temp'
++AS $$
++  SELECT s.client_id FROM public._portal_session_ctx(p_session_token) s WHERE s.contact_id IS NULL;
++$$;
++
++-- May this session see this project? Manager: any of the client's projects. Contact: only projects assigned to them.
++CREATE OR REPLACE FUNCTION public._portal_can_see_project(p_client uuid, p_contact uuid, p_project uuid)
++RETURNS boolean
++LANGUAGE sql SECURITY DEFINER STABLE
++SET search_path TO 'public', 'pg_temp'
++AS $$
++  SELECT p_client IS NOT NULL AND p_project IS NOT NULL AND EXISTS (
++    SELECT 1 FROM projects p
++    WHERE p.id = p_project
++      AND p.client_id = p_client
++      AND (p_contact IS NULL OR p.contact_id = p_contact)
++  );
++$$;
++
++REVOKE ALL ON FUNCTION public._portal_session_ctx(text)                FROM PUBLIC, anon, authenticated;
++REVOKE ALL ON FUNCTION public._portal_session_client(text)             FROM PUBLIC, anon, authenticated;
++REVOKE ALL ON FUNCTION public._portal_can_see_project(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
++
++-- 4. get_portal_data: same payload as before for a manager; a contact gets only their assigned projects, no client login
++--    details, and a "viewer" block the portal uses to hide manager-only features.
++CREATE OR REPLACE FUNCTION public.get_portal_data(p_session_token text, p_project_id uuid DEFAULT NULL)
++RETURNS jsonb
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE
++  s          record;
++  v_client   uuid;
++  v_contact  uuid;
++  v_pid      uuid;
++  c record; co record; pr record; cc record;
++  v_total    int := 0;
++  v_done     int := 0;
++  v_progress int := 0;
++  v_projects jsonb;
++BEGIN
++  SELECT * INTO s FROM public._portal_session_ctx(p_session_token);
++  v_client  := s.client_id;
++  v_contact := s.contact_id;
++  IF v_client IS NULL THEN RETURN NULL; END IF;
++
++  SELECT id, name, contact_name, email, portal_email, portal_activated_at, company_id
++    INTO c FROM clients WHERE id = v_client;
++
++  -- Always assigned (all null for a manager session); a record left unassigned would make the RETURN below fail
++  SELECT id, name, title, email INTO cc FROM client_contacts WHERE id = v_contact;
++
++  SELECT company_name, logo_url, phone, email, address_line1, address_line2, parish,
++         tagline, watermark_url, watermark_enabled, watermark_opacity, watermark_size
++    INTO co FROM company_settings WHERE company_id = c.company_id LIMIT 1;
++
++  -- Pick the project: the chosen one if this session may see it, else newest active visible, else newest visible
++  IF p_project_id IS NOT NULL AND public._portal_can_see_project(v_client, v_contact, p_project_id) THEN
++    v_pid := p_project_id;
++  END IF;
++  IF v_pid IS NULL THEN
++    SELECT p.id INTO v_pid FROM projects p
++     WHERE p.client_id = v_client AND (v_contact IS NULL OR p.contact_id = v_contact)
++     ORDER BY (p.status = 'active') DESC, p.created_at DESC LIMIT 1;
++  END IF;
++
++  -- Always assigned, even when there is no project (all fields come back null)
++  SELECT id, name, status, site_address, start_date, end_date
++    INTO pr FROM projects WHERE id = v_pid;
++
++  IF pr.id IS NOT NULL THEN
++    SELECT count(*), count(*) FILTER (WHERE status = 'complete')
++      INTO v_total, v_done FROM project_tasks WHERE project_id = pr.id;
++    IF v_total > 0 THEN v_progress := round(v_done::numeric / v_total * 100); END IF;
++  END IF;
++
++  SELECT coalesce(jsonb_agg(jsonb_build_object(
++           'id', p.id, 'name', p.name, 'status', p.status,
++           'start_date', p.start_date, 'end_date', p.end_date,
++           'progress_pct', (SELECT CASE WHEN count(*) = 0 THEN 0
++                                   ELSE round(count(*) FILTER (WHERE t.status = 'complete')::numeric / count(*) * 100) END
++                            FROM project_tasks t WHERE t.project_id = p.id))
++         ORDER BY (p.status = 'active') DESC, p.created_at DESC), '[]'::jsonb)
++    INTO v_projects
++  FROM projects p
++  WHERE p.client_id = v_client AND (v_contact IS NULL OR p.contact_id = v_contact);
++
++  RETURN jsonb_build_object(
++    'viewer', CASE WHEN v_contact IS NULL
++                THEN jsonb_build_object('kind', 'manager')
++                ELSE jsonb_build_object('kind', 'contact', 'contact_id', cc.id, 'name', cc.name,
++                                        'title', cc.title, 'email', cc.email) END,
++    'client', CASE WHEN v_contact IS NULL
++                THEN jsonb_build_object('id', c.id, 'name', c.name, 'contact_name', c.contact_name,
++                       'email', c.email, 'portal_email', c.portal_email,
++                       'portal_activated_at', c.portal_activated_at)
++                ELSE jsonb_build_object('id', c.id, 'name', c.name, 'contact_name', cc.name) END,
++    'company', jsonb_build_object('company_name', co.company_name, 'logo_url', co.logo_url,
++                'phone', co.phone, 'email', co.email,
++                'address_line1', co.address_line1, 'address_line2', co.address_line2,
++                'parish', co.parish, 'tagline', co.tagline,
++                'watermark_url', co.watermark_url, 'watermark_enabled', co.watermark_enabled,
++                'watermark_opacity', co.watermark_opacity, 'watermark_size', co.watermark_size),
++    'projects', v_projects,
++    'project', CASE WHEN pr.id IS NULL THEN NULL ELSE jsonb_build_object(
++                'id', pr.id, 'name', pr.name, 'status', pr.status, 'site_address', pr.site_address,
++                'start_date', pr.start_date, 'end_date', pr.end_date) END,
++    'progress_pct', v_progress,
++    'photos', CASE WHEN pr.id IS NULL THEN '[]'::jsonb ELSE coalesce((
++        SELECT jsonb_agg(jsonb_build_object('id', x.id, 'photo_url', x.photo_url,
++                 'caption', x.caption, 'created_at', x.created_at) ORDER BY x.created_at DESC)
++        FROM (SELECT id, photo_url, caption, created_at FROM project_photos
++              WHERE project_id = pr.id ORDER BY created_at DESC LIMIT 200) x), '[]'::jsonb) END,
++    'daily_logs', CASE WHEN pr.id IS NULL THEN '[]'::jsonb ELSE coalesce((
++        SELECT jsonb_agg(jsonb_build_object('id', x.id, 'log_date', x.log_date, 'weather', x.weather,
++                 'workers_count', x.workers_count, 'work_performed', x.work_performed,
++                 'deliveries', x.deliveries) ORDER BY x.log_date DESC)
++        FROM (SELECT id, log_date, weather, workers_count, work_performed, deliveries
++              FROM project_daily_logs WHERE project_id = pr.id
++              ORDER BY log_date DESC LIMIT 10) x), '[]'::jsonb) END,
++    'change_orders', CASE WHEN pr.id IS NULL THEN '[]'::jsonb ELSE coalesce((
++        SELECT jsonb_agg(jsonb_build_object('id', x.id, 'title', x.title, 'description', x.description,
++                 'amount', x.amount, 'status', x.status, 'created_at', x.created_at)
++                 ORDER BY x.created_at DESC)
++        FROM (SELECT id, title, description, amount, status, created_at FROM change_orders
++              WHERE project_id = pr.id ORDER BY created_at DESC) x), '[]'::jsonb) END
++  );
++END;
++$$;
++
++REVOKE ALL ON FUNCTION public.get_portal_data(text, uuid) FROM PUBLIC;
++GRANT EXECUTE ON FUNCTION public.get_portal_data(text, uuid) TO anon, authenticated;
++
++-- 5. Messages. Manager: unchanged (all of the client's messages). Contact: only messages on their assigned projects;
++--    general (project-less) messages are hidden from them.
++CREATE OR REPLACE FUNCTION public.get_portal_comments(p_session_token text)
++RETURNS SETOF client_comments
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE s record;
++BEGIN
++  SELECT * INTO s FROM public._portal_session_ctx(p_session_token);
++  IF s.client_id IS NULL THEN RETURN; END IF;
++
++  RETURN QUERY
++    SELECT cm.* FROM client_comments cm
++    WHERE cm.client_id = s.client_id
++      AND (s.contact_id IS NULL OR public._portal_can_see_project(s.client_id, s.contact_id, cm.project_id))
++    ORDER BY cm.created_at ASC;
++END;
++$$;
++
++CREATE OR REPLACE FUNCTION public.insert_portal_comment(p_session_token text, p_project_id uuid, p_message text)
++RETURNS SETOF client_comments
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE s record;
++BEGIN
++  SELECT * INTO s FROM public._portal_session_ctx(p_session_token);
++  IF s.client_id IS NULL THEN RAISE EXCEPTION 'Invalid or expired session'; END IF;
++
++  IF p_message IS NULL OR btrim(p_message) = '' THEN
++    RAISE EXCEPTION 'Message cannot be empty';
++  END IF;
++
++  IF NOT public._portal_can_see_project(s.client_id, s.contact_id, p_project_id) THEN
++    RAISE EXCEPTION 'Invalid or expired session';  -- same generic message, reveals nothing
++  END IF;
++
++  RETURN QUERY
++    INSERT INTO client_comments (client_id, project_id, message, sender_type, contact_id)
++    VALUES (s.client_id, p_project_id, p_message, 'client', s.contact_id)
++    RETURNING *;
++END;
++$$;
++
++REVOKE ALL ON FUNCTION public.get_portal_comments(text)                FROM PUBLIC;
++REVOKE ALL ON FUNCTION public.insert_portal_comment(text, uuid, text)  FROM PUBLIC;
++GRANT EXECUTE ON FUNCTION public.get_portal_comments(text)               TO anon, authenticated;
++GRANT EXECUTE ON FUNCTION public.insert_portal_comment(text, uuid, text) TO anon, authenticated;
++
++-- 6. Activity log: same rules as before, but a contact may only attach a project they can see, and the row records
++--    which contact it was.
++CREATE OR REPLACE FUNCTION public.log_portal_event(
++  p_session_token text,
++  p_event_type    text,
++  p_entity_type   text DEFAULT NULL,
++  p_entity_id     text DEFAULT NULL,
++  p_project_id    uuid DEFAULT NULL,
++  p_metadata      jsonb DEFAULT '{}'::jsonb
++) RETURNS void
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE
++  s            record;
++  v_session_id text;
++  v_project_id uuid;
++  v_headers    json;
++  v_ip         text;
++  v_ua         text;
++  -- Same lists as live today (20260919000000 plus 'estimate_view' from 20260920000000)
++  v_allowed    text[] := ARRAY['session_resume','tab_view','photo_view','photo_download','estimate_view',
++                               'contract_view','contract_sign','invoice_view','change_view',
++                               'change_approve','change_reject','comment_sent','review_sent','logout'];
++  v_low_value  text[] := ARRAY['session_resume','tab_view','photo_view','contract_view',
++                               'invoice_view','change_view','estimate_view'];
++BEGIN
++  IF p_event_type IS NULL OR NOT (p_event_type = ANY (v_allowed)) THEN
++    RETURN;
++  END IF;
++
++  SELECT * INTO s FROM public._portal_session_ctx(p_session_token);
++  IF s.client_id IS NULL THEN
++    RETURN;  -- invalid session: silently ignore
++  END IF;
++  v_session_id := s.session_id::text;
++
++  IF p_project_id IS NOT NULL AND public._portal_can_see_project(s.client_id, s.contact_id, p_project_id) THEN
++    v_project_id := p_project_id;
++  END IF;
++
++  BEGIN
++    v_headers := nullif(current_setting('request.headers', true), '')::json;
++  EXCEPTION WHEN OTHERS THEN
++    v_headers := NULL;
++  END;
++
++  v_ip := nullif(btrim(split_part(
++            coalesce(v_headers->>'cf-connecting-ip', v_headers->>'x-forwarded-for', ''), ',', 1)), '');
++  v_ua := left(v_headers->>'user-agent', 300);
++
++  -- skip repeats of routine views within 30 minutes
++  IF p_event_type = ANY (v_low_value) THEN
++    IF EXISTS (
++      SELECT 1 FROM client_portal_activity a
++      WHERE a.session_id = v_session_id
++        AND a.event_type = p_event_type
++        AND a.entity_id IS NOT DISTINCT FROM p_entity_id
++        AND a.occurred_at > now() - interval '30 minutes'
++    ) THEN
++      RETURN;
++    END IF;
++  END IF;
++
++  INSERT INTO client_portal_activity
++    (company_id, client_id, contact_id, project_id, session_id, event_type, entity_type, entity_id,
++     ip_address, user_agent, metadata)
++  VALUES
++    (s.company_id, s.client_id, s.contact_id, v_project_id, v_session_id, p_event_type, p_entity_type, p_entity_id,
++     v_ip, v_ua, coalesce(p_metadata, '{}'::jsonb));
++
++EXCEPTION WHEN OTHERS THEN
++  RETURN;  -- logging must never break the portal
++END;
++$$;
++
++REVOKE ALL ON FUNCTION public.log_portal_event(text,text,text,text,uuid,jsonb) FROM PUBLIC;
++GRANT EXECUTE ON FUNCTION public.log_portal_event(text,text,text,text,uuid,jsonb) TO anon, authenticated;
++
++-- 7. Before login: what a contact's invite link screen needs. Never returns anything secret.
++CREATE OR REPLACE FUNCTION public.get_contact_portal_link_info(p_portal_token text)
++RETURNS jsonb
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE r record; co record;
++BEGIN
++  IF p_portal_token IS NULL OR btrim(p_portal_token) = '' THEN RETURN NULL; END IF;
++
++  SELECT a.contact_id, a.activated_at, a.portal_email, cc.name AS contact_name, cc.email AS contact_email,
++         c.name AS client_name, c.company_id
++    INTO r
++  FROM client_contact_portal_access a
++  JOIN client_contacts cc ON cc.id = a.contact_id
++  JOIN clients c ON c.id = cc.client_id
++  WHERE a.portal_token = p_portal_token
++    AND a.enabled = true AND a.revoked_at IS NULL
++    AND c.portal_enabled = true;
++
++  IF r.contact_id IS NULL THEN RETURN NULL; END IF;
++
++  SELECT company_name, logo_url INTO co FROM company_settings WHERE company_id = r.company_id LIMIT 1;
++
++  RETURN jsonb_build_object(
++    'mode', CASE WHEN r.activated_at IS NOT NULL THEN 'login' ELSE 'setup' END,
++    'contact', jsonb_build_object('id', r.contact_id, 'name', r.contact_name,
++                 'email', coalesce(r.portal_email, r.contact_email), 'client_name', r.client_name),
++    'company', jsonb_build_object('company_name', co.company_name, 'logo_url', co.logo_url)
++  );
++END;
++$$;
++
++REVOKE ALL ON FUNCTION public.get_contact_portal_link_info(text) FROM PUBLIC;
++GRANT EXECUTE ON FUNCTION public.get_contact_portal_link_info(text) TO anon, authenticated;
++
++-- 8. Staff: invite, check and revoke a project's contact. Same staff roles as share_with_client.
++
++-- Status of the project's contact login (or null fields when the project has no contact).
++CREATE OR REPLACE FUNCTION public.get_project_contact_portal_status(p_project_id uuid)
++RETURNS jsonb
++LANGUAGE plpgsql SECURITY DEFINER STABLE
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE
++  v_company uuid := public._portal_staff_company();
++  r record;
++BEGIN
++  SELECT p.id AS project_id, p.contact_id, cc.name, cc.email, c.portal_enabled,
++         a.portal_token, a.activated_at, a.enabled, a.revoked_at, a.invited_at
++    INTO r
++  FROM projects p
++  JOIN clients c ON c.id = p.client_id AND c.company_id = v_company
++  LEFT JOIN client_contacts cc ON cc.id = p.contact_id
++  LEFT JOIN client_contact_portal_access a ON a.contact_id = p.contact_id
++  WHERE p.id = p_project_id;
++
++  IF r.project_id IS NULL THEN RAISE EXCEPTION 'Project not found'; END IF;
++
++  RETURN jsonb_build_object(
++    'contact_id', r.contact_id,
++    'contact_name', r.name,
++    'contact_email', r.email,
++    'client_portal_enabled', coalesce(r.portal_enabled, false),
++    'status', CASE
++                WHEN r.contact_id IS NULL THEN 'no_contact'
++                WHEN r.portal_token IS NULL THEN 'not_invited'
++                WHEN NOT r.enabled OR r.revoked_at IS NOT NULL THEN 'revoked'
++                WHEN r.activated_at IS NULL THEN 'invited'
++                ELSE 'active' END,
++    'portal_token', CASE WHEN r.enabled AND r.revoked_at IS NULL THEN r.portal_token END,
++    'invited_at', r.invited_at,
++    'activated_at', r.activated_at
++  );
++END;
++$$;
++
++-- Invite (or re-invite) the project's contact. Returns the token for the invite link. Re-inviting a revoked contact issues
++-- a NEW token and clears the old password, so an old link or password can never come back to life.
++CREATE OR REPLACE FUNCTION public.invite_project_contact_to_portal(p_project_id uuid)
++RETURNS jsonb
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE
++  v_company uuid := public._portal_staff_company();
++  r record;
++  a record;
++  v_email text;
++BEGIN
++  SELECT p.id, p.contact_id, c.portal_enabled, cc.email
++    INTO r
++  FROM projects p
++  JOIN clients c ON c.id = p.client_id AND c.company_id = v_company
++  LEFT JOIN client_contacts cc ON cc.id = p.contact_id AND cc.client_id = p.client_id
++  WHERE p.id = p_project_id;
++
++  IF r.id IS NULL THEN RAISE EXCEPTION 'Project not found'; END IF;
++  IF r.contact_id IS NULL THEN RAISE EXCEPTION 'Assign a contact to this project first'; END IF;
++  IF NOT coalesce(r.portal_enabled, false) THEN
++    RAISE EXCEPTION 'Turn on the client portal for this client first';
++  END IF;
++
++  SELECT * INTO a FROM client_contact_portal_access WHERE contact_id = r.contact_id FOR UPDATE;
++
++  -- Pre-fill the sign-in email from the contact, unless another live contact login already uses it
++  -- (then this contact signs in with their invite link, or sets an email during setup).
++  v_email := nullif(lower(btrim(r.email)), '');
++  IF v_email IS NOT NULL AND EXISTS (
++       SELECT 1 FROM client_contact_portal_access x
++       WHERE lower(x.portal_email) = v_email AND x.enabled AND x.contact_id <> r.contact_id) THEN
++    v_email := NULL;
++  END IF;
++
++  IF a.contact_id IS NULL THEN
++    INSERT INTO client_contact_portal_access (contact_id, company_id, portal_token, portal_email, invited_by)
++    VALUES (r.contact_id, v_company, public._portal_random_token(), v_email, auth.uid())
++    RETURNING * INTO a;
++  ELSIF NOT a.enabled OR a.revoked_at IS NOT NULL THEN
++    UPDATE client_contact_portal_access
++       SET enabled = true, revoked_at = NULL, portal_token = public._portal_random_token(), portal_email = v_email,
++           password_hash = NULL, activated_at = NULL, reset_token = NULL, reset_expires_at = NULL,
++           invited_by = auth.uid(), invited_at = now(), updated_at = now()
++     WHERE contact_id = r.contact_id
++    RETURNING * INTO a;
++  END IF;
++
++  RETURN jsonb_build_object('contact_id', a.contact_id, 'portal_token', a.portal_token,
++                            'status', CASE WHEN a.activated_at IS NULL THEN 'invited' ELSE 'active' END);
++END;
++$$;
++
++-- Revoke a contact's login and end all of their sessions at once.
++CREATE OR REPLACE FUNCTION public.revoke_contact_portal_access(p_contact_id uuid)
++RETURNS void
++LANGUAGE plpgsql SECURITY DEFINER
++SET search_path TO 'public', 'pg_temp'
++AS $$
++DECLARE v_company uuid := public._portal_staff_company();
++BEGIN
++  IF NOT EXISTS (SELECT 1 FROM client_contacts WHERE id = p_contact_id AND company_id = v_company) THEN
++    RAISE EXCEPTION 'Contact not found';
++  END IF;
++
++  UPDATE client_contact_portal_access
++     SET enabled = false, revoked_at = now(), reset_token = NULL, reset_expires_at = NULL, updated_at = now()
++   WHERE contact_id = p_contact_id;
++
++  DELETE FROM client_portal_sessions WHERE contact_id = p_contact_id;
++END;
++$$;
++
++REVOKE ALL ON FUNCTION public.get_project_contact_portal_status(uuid) FROM PUBLIC, anon;
++REVOKE ALL ON FUNCTION public.invite_project_contact_to_portal(uuid)  FROM PUBLIC, anon;
++REVOKE ALL ON FUNCTION public.revoke_contact_portal_access(uuid)      FROM PUBLIC, anon;
++GRANT EXECUTE ON FUNCTION public.get_project_contact_portal_status(uuid) TO authenticated;
++GRANT EXECUTE ON FUNCTION public.invite_project_contact_to_portal(uuid)  TO authenticated;
++GRANT EXECUTE ON FUNCTION public.revoke_contact_portal_access(uuid)      TO authenticated;
++
++COMMIT;
+diff --git a/supabase/tests/portal-access/capture.sql b/supabase/tests/portal-access/capture.sql
+new file mode 100644
+index 0000000..c2c79e5
+--- /dev/null
++++ b/supabase/tests/portal-access/capture.sql
+@@ -0,0 +1,14 @@
++-- Capture every manager-facing RPC's output (run as anon, exactly like the browser) into regress(phase,...)
++CREATE TABLE IF NOT EXISTS regress (phase text, name text, out jsonb);
++GRANT ALL ON regress TO anon;
++SET ROLE anon;
++INSERT INTO regress SELECT :'phase', 'data '||t, public.get_portal_data(t) - 'viewer' FROM unnest(ARRAY['tok-M','tok-MO','tok-X']) t;
++INSERT INTO regress SELECT :'phase', 'data P'||n||' '||t, public.get_portal_data(t, ('90000000-0000-0000-0000-00000000000'||n)::uuid) - 'viewer'
++  FROM unnest(ARRAY['tok-M','tok-MO']) t, generate_series(1,5) n;
++INSERT INTO regress SELECT :'phase', 'comments '||t, (SELECT coalesce(jsonb_agg(to_jsonb(c) - 'contact_id' ORDER BY c.created_at, c.message), '[]') FROM public.get_portal_comments(t) c) FROM unnest(ARRAY['tok-M','tok-MO','tok-X']) t;
++INSERT INTO regress SELECT :'phase', 'invoices '||t, (SELECT coalesce(jsonb_agg(x ORDER BY x->>'id'), '[]') FROM public.get_portal_invoices(t) x) FROM unnest(ARRAY['tok-M','tok-MO','tok-X']) t;
++INSERT INTO regress SELECT :'phase', 'contracts '||t, (SELECT coalesce(jsonb_agg(x ORDER BY x->>'id'), '[]') FROM public.get_portal_contracts(t) x) FROM unnest(ARRAY['tok-M','tok-MO','tok-X']) t;
++INSERT INTO regress SELECT :'phase', 'estimates '||t, (SELECT coalesce(jsonb_agg(x ORDER BY x->>'id'), '[]') FROM public.get_portal_estimates(t) x) FROM unnest(ARRAY['tok-M','tok-MO','tok-X']) t;
++INSERT INTO regress SELECT :'phase', 'schedule '||t||' '||n, (SELECT coalesce(jsonb_agg(x - 'id'), '[]') FROM public.get_portal_contract_schedule(t, ('f0000000-0000-0000-0000-00000000000'||n)::uuid) x)
++  FROM unnest(ARRAY['tok-M','tok-MO']) t, generate_series(1,5) n;
++RESET ROLE;
+diff --git a/supabase/tests/portal-access/fixtures.sql b/supabase/tests/portal-access/fixtures.sql
+new file mode 100644
+index 0000000..c8ade10
+--- /dev/null
++++ b/supabase/tests/portal-access/fixtures.sql
+@@ -0,0 +1,61 @@
++-- Fixed ids so outputs can be diffed between builds.
++-- Company A = contractor (Magnus). Company B = another tenant.
++-- Client F = Food For The Poor (portal on). Client O = another client of A (portal on).
++-- Contacts of F: k1 (officer 1), k2 (officer 2), k3 (officer 3, revoked). Contact of O: kx.
++-- Projects: P1 -> k1, P5 -> k1 (second assignment), P2 -> k2, P3 -> F no contact, P4 -> O / kx.
++\set A  '''aaaaaaaa-0000-0000-0000-000000000001'''
++\set B  '''bbbbbbbb-0000-0000-0000-000000000001'''
++
++INSERT INTO companies (id, name) VALUES (:A, 'Magnus'), (:B, 'Other Co');
++INSERT INTO company_settings (company_id, company_name) VALUES (:A, 'Magnus Boys'), (:B, 'Other Co');
++INSERT INTO user_profiles (id, company_id, role) VALUES
++  ('5aff0000-0000-0000-0000-00000000000a', :A, 'admin'),
++  ('5aff0000-0000-0000-0000-00000000000b', :B, 'admin'),
++  ('5aff0000-0000-0000-0000-00000000000c', :A, 'field_worker');
++
++INSERT INTO clients (id, company_id, name, contact_name, email, portal_email, portal_enabled, portal_activated_at, portal_password_hash) VALUES
++  ('c1000000-0000-0000-0000-00000000000f', :A, 'Food For The Poor', 'Head Office', 'office@fftp.test', 'office@fftp.test', true, now(), 'x'),
++  ('c1000000-0000-0000-0000-00000000000e', :A, 'Other Client', 'Bob', 'bob@other.test', 'bob@other.test', true, now(), 'x');
++
++INSERT INTO client_contacts (id, company_id, client_id, name, email, is_primary, created_at) VALUES
++  ('c0000000-0000-0000-0000-0000000000a0', :A, 'c1000000-0000-0000-0000-00000000000f', 'Head Office', 'office@fftp.test', true, now() - interval '1 day'),
++  ('c0000000-0000-0000-0000-0000000000a1', :A, 'c1000000-0000-0000-0000-00000000000f', 'Officer One', 'one@fftp.test', false, now()),
++  ('c0000000-0000-0000-0000-0000000000a2', :A, 'c1000000-0000-0000-0000-00000000000f', 'Officer Two', 'two@fftp.test', false, now()),
++  ('c0000000-0000-0000-0000-0000000000a3', :A, 'c1000000-0000-0000-0000-00000000000f', 'Officer Three', 'three@fftp.test', false, now()),
++  ('c0000000-0000-0000-0000-0000000000b9', :A, 'c1000000-0000-0000-0000-00000000000e', 'Other Officer', 'x@other.test', false, now());
++
++INSERT INTO projects (id, company_id, client_id, contact_id, name, created_at) VALUES
++  ('90000000-0000-0000-0000-000000000001', :A, 'c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a1', 'P1 Clarendon house', '2026-01-01'),
++  ('90000000-0000-0000-0000-000000000002', :A, 'c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a2', 'P2 St Mary house',   '2026-01-02'),
++  ('90000000-0000-0000-0000-000000000003', :A, 'c1000000-0000-0000-0000-00000000000f', NULL,                                   'P3 No contact',      '2026-01-03'),
++  ('90000000-0000-0000-0000-000000000004', :A, 'c1000000-0000-0000-0000-00000000000e', 'c0000000-0000-0000-0000-0000000000b9', 'P4 Other client',    '2026-01-04'),
++  ('90000000-0000-0000-0000-000000000005', :A, 'c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a1', 'P5 Second for k1',   '2025-12-01');
++
++-- Per-project data, tagged with the project number so leaks are obvious
++INSERT INTO project_photos (project_id, photo_url, caption, created_at)
++  SELECT id, 'photo-' || right(id::text, 1), 'photo of ' || name, '2026-02-01' FROM projects;
++INSERT INTO project_daily_logs (project_id, log_date, work_performed)
++  SELECT id, '2026-02-01', 'log of ' || name FROM projects;
++INSERT INTO project_tasks (project_id, status) SELECT id, 'complete' FROM projects;
++INSERT INTO change_orders (id, project_id, title, amount, created_at)
++  SELECT ('d0000000-0000-0000-0000-00000000000' || right(id::text, 1))::uuid, id, 'CO for ' || name, 1000, '2026-02-01' FROM projects;
++INSERT INTO client_comments (client_id, project_id, message, sender_type, created_at)
++  SELECT client_id, id, 'msg on ' || name, 'staff', '2026-02-01' FROM projects;
++INSERT INTO client_comments (client_id, project_id, message, sender_type, created_at) VALUES
++  ('c1000000-0000-0000-0000-00000000000f', NULL, 'GENERAL msg to FFTP', 'staff', '2026-02-02');
++INSERT INTO client_invoices (id, company_id, client_id, project_id, shared_at, invoice_date)
++  SELECT ('e0000000-0000-0000-0000-00000000000' || right(id::text, 1))::uuid, :A, client_id, id, '2026-02-01', '2026-02-01' FROM projects;
++INSERT INTO client_invoices (id, company_id, client_id, project_id, shared_at, invoice_date) VALUES
++  ('e0000000-0000-0000-0000-0000000000ff', :A, 'c1000000-0000-0000-0000-00000000000f', NULL, '2026-02-01', '2026-02-03');
++INSERT INTO client_contracts (id, company_id, client_id, project_id, shared_at, created_at)
++  SELECT ('f0000000-0000-0000-0000-00000000000' || right(id::text, 1))::uuid, :A, client_id, id, '2026-02-01', '2026-02-01' FROM projects;
++INSERT INTO contract_payment_schedules (contract_id, milestone_name, sort_order)
++  SELECT id, 'milestone', 1 FROM client_contracts;
++INSERT INTO estimate_headers (project_id, title, version, shared_at, shared_snapshot)
++  SELECT id, 'est ' || name, 1, '2026-02-01', '{}'::jsonb FROM projects;
++
++-- Sessions. M = manager of F, MO = manager of O, X = expired manager.
++INSERT INTO client_portal_sessions (client_id, session_token, expires_at) VALUES
++  ('c1000000-0000-0000-0000-00000000000f', 'tok-M',  now() + interval '1 day'),
++  ('c1000000-0000-0000-0000-00000000000e', 'tok-MO', now() + interval '1 day'),
++  ('c1000000-0000-0000-0000-00000000000f', 'tok-X',  now() - interval '1 minute');
+diff --git a/supabase/tests/portal-access/leak_tests.sql b/supabase/tests/portal-access/leak_tests.sql
+new file mode 100644
+index 0000000..1cbbe7a
+--- /dev/null
++++ b/supabase/tests/portal-access/leak_tests.sql
+@@ -0,0 +1,169 @@
++-- Leakage tests: contact sessions vs manager sessions. Runs after the migration, on the fixtures.
++\set ON_ERROR_STOP 1
++CREATE TABLE test_results (n serial, name text, ok boolean, detail text);
++GRANT ALL ON test_results TO anon, authenticated; GRANT ALL ON SEQUENCE test_results_n_seq TO anon, authenticated;
++CREATE FUNCTION t(p_name text, p_ok boolean, p_detail text DEFAULT NULL) RETURNS void LANGUAGE sql AS
++$$ INSERT INTO test_results (name, ok, detail) VALUES (p_name, coalesce(p_ok, false), p_detail) $$;
++GRANT EXECUTE ON FUNCTION t TO anon, authenticated;
++-- does a call raise?
++CREATE FUNCTION raises(p_sql text) RETURNS boolean LANGUAGE plpgsql AS
++$$ BEGIN EXECUTE p_sql; RETURN false; EXCEPTION WHEN OTHERS THEN RETURN true; END $$;
++GRANT EXECUTE ON FUNCTION raises TO anon, authenticated;
++-- the set of project names a get_portal_data payload exposes anywhere
++CREATE FUNCTION names_in(d jsonb) RETURNS text LANGUAGE sql AS $$
++  SELECT coalesce(string_agg(DISTINCT m[1], ',' ORDER BY m[1]), '') FROM regexp_matches(coalesce(d::text,''), '(P[0-9])', 'g') m $$;
++GRANT EXECUTE ON FUNCTION names_in TO anon, authenticated;
++
++-- Contact logins (as the login edge function would create them)
++INSERT INTO client_contact_portal_access (contact_id, company_id, portal_token, portal_email, password_hash, activated_at, enabled, revoked_at) VALUES
++  ('c0000000-0000-0000-0000-0000000000a1', 'aaaaaaaa-0000-0000-0000-000000000001', 'link-k1', 'one@fftp.test', 'h', now(), true, NULL),
++  ('c0000000-0000-0000-0000-0000000000a2', 'aaaaaaaa-0000-0000-0000-000000000001', 'link-k2', 'two@fftp.test', 'h', now(), true, NULL),
++  ('c0000000-0000-0000-0000-0000000000a3', 'aaaaaaaa-0000-0000-0000-000000000001', 'link-k3', 'three@fftp.test', 'h', now(), false, now()),
++  ('c0000000-0000-0000-0000-0000000000b9', 'aaaaaaaa-0000-0000-0000-000000000001', 'link-kx', 'x@other.test', 'h', now(), true, NULL);
++INSERT INTO client_portal_sessions (client_id, contact_id, session_token, expires_at) VALUES
++  ('c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a1', 'tok-k1',  now() + interval '1 day'),
++  ('c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a2', 'tok-k2',  now() + interval '1 day'),
++  ('c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a3', 'tok-k3',  now() + interval '1 day'),
++  ('c1000000-0000-0000-0000-00000000000e', 'c0000000-0000-0000-0000-0000000000b9', 'tok-kx',  now() + interval '1 day'),
++  -- forged: officer of client O riding on client F's id
++  ('c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000b9', 'tok-forged', now() + interval '1 day'),
++  ('c1000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000a1', 'tok-k1-expired', now() - interval '1 second'),
++  (NULL, NULL, 'tok-nullclient', now() + interval '1 day');
++
++SET ROLE anon;
++
++-- ── get_portal_data ─────────────────────────────────────────────────
++SELECT t('k1 sees only P1,P5 by default', names_in(get_portal_data('tok-k1')) = 'P1,P5', names_in(get_portal_data('tok-k1')));
++SELECT t('k1 project list is P1,P5', (SELECT string_agg(x->>'name', '|' ORDER BY x->>'name') FROM jsonb_array_elements(get_portal_data('tok-k1')->'projects') x) = 'P1 Clarendon house|P5 Second for k1');
++SELECT t('k1 asking for P2 (other officer) gets no P2 data', position('P2' in names_in(get_portal_data('tok-k1', '90000000-0000-0000-0000-000000000002'))) = 0,
++         names_in(get_portal_data('tok-k1', '90000000-0000-0000-0000-000000000002')));
++SELECT t('k1 asking for P3 (unassigned) gets no P3 data', position('P3' in names_in(get_portal_data('tok-k1', '90000000-0000-0000-0000-000000000003'))) = 0);
++SELECT t('k1 asking for P4 (other client) gets no P4 data', position('P4' in names_in(get_portal_data('tok-k1', '90000000-0000-0000-0000-000000000004'))) = 0);
++SELECT t('k1 can switch to own P5', get_portal_data('tok-k1', '90000000-0000-0000-0000-000000000005')->'project'->>'name' = 'P5 Second for k1');
++SELECT t('k2 sees only P2', names_in(get_portal_data('tok-k2')) = 'P2', names_in(get_portal_data('tok-k2')));
++SELECT t('kx sees only P4', names_in(get_portal_data('tok-kx')) = 'P4', names_in(get_portal_data('tok-kx')));
++SELECT t('k1 payload hides client login email', get_portal_data('tok-k1')->'client' ? 'portal_email' = false
++                                               AND position('office@fftp.test' in get_portal_data('tok-k1')::text) = 0);
++SELECT t('k1 viewer is contact Officer One', get_portal_data('tok-k1')->'viewer'->>'kind' = 'contact'
++                                            AND get_portal_data('tok-k1')->'viewer'->>'name' = 'Officer One');
++SELECT t('manager viewer is manager', get_portal_data('tok-M')->'viewer'->>'kind' = 'manager');
++SELECT t('manager still sees all 4 F projects', jsonb_array_length(get_portal_data('tok-M')->'projects') = 4);
++SELECT t('revoked contact session is dead', get_portal_data('tok-k3') IS NULL);
++SELECT t('forged cross-client contact session is dead', get_portal_data('tok-forged') IS NULL);
++SELECT t('expired contact session is dead', get_portal_data('tok-k1-expired') IS NULL);
++SELECT t('null-client session is dead', get_portal_data('tok-nullclient') IS NULL);
++SELECT t('empty / null token is dead', get_portal_data('') IS NULL AND get_portal_data(NULL) IS NULL);
++
++-- ── messages ────────────────────────────────────────────────────────
++SELECT t('k1 messages: only P1,P5', (SELECT string_agg(message, '|' ORDER BY message) FROM get_portal_comments('tok-k1')) = 'msg on P1 Clarendon house|msg on P5 Second for k1',
++         (SELECT string_agg(message, '|' ORDER BY message) FROM get_portal_comments('tok-k1')));
++SELECT t('k1 never sees GENERAL message', NOT EXISTS (SELECT 1 FROM get_portal_comments('tok-k1') WHERE project_id IS NULL));
++SELECT t('manager still sees GENERAL message', EXISTS (SELECT 1 FROM get_portal_comments('tok-M') WHERE project_id IS NULL));
++SELECT t('k1 cannot post on P2',   raises($$SELECT * FROM insert_portal_comment('tok-k1', '90000000-0000-0000-0000-000000000002', 'hi')$$));
++SELECT t('k1 cannot post on P3',   raises($$SELECT * FROM insert_portal_comment('tok-k1', '90000000-0000-0000-0000-000000000003', 'hi')$$));
++SELECT t('k1 cannot post on P4',   raises($$SELECT * FROM insert_portal_comment('tok-k1', '90000000-0000-0000-0000-000000000004', 'hi')$$));
++SELECT t('k1 cannot post general', raises($$SELECT * FROM insert_portal_comment('tok-k1', NULL, 'hi')$$));
++SELECT t('k1 can post on P1, tagged with k1', (SELECT contact_id FROM insert_portal_comment('tok-k1', '90000000-0000-0000-0000-000000000001', 'from k1'))
++         = 'c0000000-0000-0000-0000-0000000000a1');
++SELECT t('k2 does not see k1''s new message', NOT EXISTS (SELECT 1 FROM get_portal_comments('tok-k2') WHERE message = 'from k1'));
++SELECT t('manager sees k1''s new message', EXISTS (SELECT 1 FROM get_portal_comments('tok-M') WHERE message = 'from k1'));
++SELECT t('manager post untagged', (SELECT contact_id FROM insert_portal_comment('tok-M', '90000000-0000-0000-0000-000000000002', 'from mgr')) IS NULL);
++
++-- ── manager-only features are closed to contacts ───────────────────
++SELECT t('k1 invoices empty',  NOT EXISTS (SELECT 1 FROM get_portal_invoices('tok-k1')));
++SELECT t('k1 contracts empty', NOT EXISTS (SELECT 1 FROM get_portal_contracts('tok-k1')));
++SELECT t('k1 estimates empty', NOT EXISTS (SELECT 1 FROM get_portal_estimates('tok-k1')));
++SELECT t('k1 own-project contract schedule empty', NOT EXISTS (SELECT 1 FROM get_portal_contract_schedule('tok-k1', 'f0000000-0000-0000-0000-000000000001')));
++SELECT t('k1 cannot approve own-project change order', raises($$SELECT respond_portal_change_order('tok-k1', 'd0000000-0000-0000-0000-000000000001', 'approved')$$));
++SELECT t('k1 cannot review own project', raises($$SELECT submit_portal_review('tok-k1', '90000000-0000-0000-0000-000000000001', 5, 'x')$$));
++SELECT t('k1 change order on P1 still pending', get_portal_data('tok-k1', '90000000-0000-0000-0000-000000000001')->'change_orders'->0->>'status' = 'pending');
++SELECT t('manager invoices incl. general (5)', (SELECT count(*) FROM get_portal_invoices('tok-M')) = 5);
++SELECT t('manager can still approve', (respond_portal_change_order('tok-M', 'd0000000-0000-0000-0000-000000000002', 'approved'))->>'status' = 'approved');
++SELECT t('manager can still review', submit_portal_review('tok-M', '90000000-0000-0000-0000-000000000001', 5, 'ok') ? 'id');
++
++-- ── activity log ────────────────────────────────────────────────────
++SELECT log_portal_event('tok-k1', 'photo_view', 'photo', 'p2photo', '90000000-0000-0000-0000-000000000002');
++SELECT log_portal_event('tok-k1', 'tab_view', 'tab', 'overview', '90000000-0000-0000-0000-000000000001');
++SELECT log_portal_event('tok-k1', 'estimate_view', 'estimate', 'e1', '90000000-0000-0000-0000-000000000001');
++RESET ROLE;
++SELECT t('log: k1 cannot attach P2 to an event', (SELECT project_id FROM client_portal_activity WHERE entity_id = 'p2photo') IS NULL);
++SELECT t('log: k1 event on P1 keeps project and contact', EXISTS (SELECT 1 FROM client_portal_activity WHERE entity_id = 'overview'
++          AND project_id = '90000000-0000-0000-0000-000000000001' AND contact_id = 'c0000000-0000-0000-0000-0000000000a1'));
++SELECT t('log: estimate_view still accepted', EXISTS (SELECT 1 FROM client_portal_activity WHERE event_type = 'estimate_view'));
++
++-- ── direct table / helper access from the browser key ──────────────
++SET ROLE anon;
++SELECT t('anon cannot read contact credentials', raises($$SELECT * FROM client_contact_portal_access$$));
++SELECT t('anon cannot read sessions',            raises($$SELECT * FROM client_portal_sessions$$));
++SELECT t('anon cannot read client_contacts', raises($$SELECT * FROM client_contacts$$));
++SELECT t('anon cannot call _portal_session_ctx', raises($$SELECT * FROM _portal_session_ctx('tok-k1')$$));
++SELECT t('anon cannot call _portal_can_see_project', raises($$SELECT _portal_can_see_project(NULL,NULL,NULL)$$));
++SELECT t('anon cannot invite', raises($$SELECT invite_project_contact_to_portal('90000000-0000-0000-0000-000000000001')$$));
++SELECT t('link info: k1 is login mode, no secrets', get_contact_portal_link_info('link-k1')->>'mode' = 'login'
++          AND position('link-k1' in get_contact_portal_link_info('link-k1')::text) = 0
++          AND position('"h"' in get_contact_portal_link_info('link-k1')::text) = 0);
++SELECT t('link info: revoked k3 link is dead', get_contact_portal_link_info('link-k3') IS NULL);
++SELECT t('link info: client magic-link token is not a contact link', get_contact_portal_link_info((SELECT 'tok-M')) IS NULL);
++RESET ROLE;
++SELECT t('authenticated cannot read contact credentials', raises($$SET LOCAL ROLE authenticated; SELECT * FROM client_contact_portal_access$$));
++SELECT t('authenticated cannot read sessions directly', raises($$SET LOCAL ROLE authenticated; SELECT * FROM client_portal_sessions$$));
++SELECT t('authenticated cannot truncate client_contacts', raises($$SET LOCAL ROLE authenticated; TRUNCATE client_contacts CASCADE$$));
++
++-- ── live reassignment, moves, revocation, portal switch-off ────────
++UPDATE projects SET contact_id = 'c0000000-0000-0000-0000-0000000000a2' WHERE id = '90000000-0000-0000-0000-000000000001';
++SET ROLE anon;
++SELECT t('after reassigning P1: k1 sees only P5', names_in(get_portal_data('tok-k1')) = 'P5', names_in(get_portal_data('tok-k1')));
++SELECT t('after reassigning P1: k1 loses P1 messages', NOT EXISTS (SELECT 1 FROM get_portal_comments('tok-k1') WHERE project_id = '90000000-0000-0000-0000-000000000001'));
++SELECT t('after reassigning P1: k2 sees P1,P2', names_in(get_portal_data('tok-k2')) = 'P1,P2', names_in(get_portal_data('tok-k2')));
++RESET ROLE;
++UPDATE projects SET contact_id = NULL WHERE contact_id = 'c0000000-0000-0000-0000-0000000000a1';
++SET ROLE anon;
++SELECT t('k1 with no projects: valid session, nothing shown', get_portal_data('tok-k1') IS NOT NULL
++          AND jsonb_array_length(get_portal_data('tok-k1')->'projects') = 0 AND get_portal_data('tok-k1')->'project' = 'null'::jsonb
++          AND names_in(get_portal_data('tok-k1')) = '');
++SELECT t('k1 with no projects: no messages', NOT EXISTS (SELECT 1 FROM get_portal_comments('tok-k1')));
++RESET ROLE;
++UPDATE client_contacts SET client_id = 'c1000000-0000-0000-0000-00000000000e' WHERE id = 'c0000000-0000-0000-0000-0000000000a2';
++SET ROLE anon;
++SELECT t('contact moved to another client: old session dead', get_portal_data('tok-k2') IS NULL);
++RESET ROLE;
++UPDATE clients SET portal_enabled = false WHERE id = 'c1000000-0000-0000-0000-00000000000e';
++SET ROLE anon;
++SELECT t('client portal off: contact session dead', get_portal_data('tok-kx') IS NULL);
++SELECT t('client portal off: manager session dead too', get_portal_data('tok-MO') IS NULL);
++RESET ROLE;
++
++-- ── staff RPCs ──────────────────────────────────────────────────────
++UPDATE clients SET portal_enabled = true WHERE id = 'c1000000-0000-0000-0000-00000000000e';
++UPDATE client_contacts SET client_id = 'c1000000-0000-0000-0000-00000000000f' WHERE id = 'c0000000-0000-0000-0000-0000000000a2';
++UPDATE projects SET contact_id = 'c0000000-0000-0000-0000-0000000000a3' WHERE id = '90000000-0000-0000-0000-000000000003';
++SET ROLE authenticated;
++SET test.uid = '5aff0000-0000-0000-0000-00000000000b';  -- staff of ANOTHER company
++SELECT t('other company cannot see status',  raises($$SELECT get_project_contact_portal_status('90000000-0000-0000-0000-000000000003')$$));
++SELECT t('other company cannot invite',      raises($$SELECT invite_project_contact_to_portal('90000000-0000-0000-0000-000000000003')$$));
++SELECT t('other company cannot revoke',      raises($$SELECT revoke_contact_portal_access('c0000000-0000-0000-0000-0000000000a2')$$));
++SET test.uid = '5aff0000-0000-0000-0000-00000000000c';  -- same company, non-office role
++SELECT t('field role cannot invite',         raises($$SELECT invite_project_contact_to_portal('90000000-0000-0000-0000-000000000003')$$));
++SET test.uid = '5aff0000-0000-0000-0000-00000000000a';  -- admin of company A
++SELECT t('status of revoked k3 is revoked, no token', get_project_contact_portal_status('90000000-0000-0000-0000-000000000003')->>'status' = 'revoked'
++          AND get_project_contact_portal_status('90000000-0000-0000-0000-000000000003')->>'portal_token' IS NULL);
++SELECT t('re-invite revoked k3 gives a NEW token', invite_project_contact_to_portal('90000000-0000-0000-0000-000000000003')->>'portal_token' <> 'link-k3');
++SELECT t('re-invited k3 is back to setup', get_project_contact_portal_status('90000000-0000-0000-0000-000000000003')->>'status' = 'invited');
++SELECT t('cannot invite on a project with no contact', raises($$SELECT invite_project_contact_to_portal('90000000-0000-0000-0000-000000000005')$$));
++SELECT revoke_contact_portal_access('c0000000-0000-0000-0000-0000000000a2');
++RESET ROLE; RESET test.uid;
++SET ROLE anon;
++SELECT t('revoke kills k2 session immediately', get_portal_data('tok-k2') IS NULL);
++SELECT t('revoke kills k2 link', get_contact_portal_link_info('link-k2') IS NULL);
++SELECT t('revoke leaves manager alone', get_portal_data('tok-M') IS NOT NULL);
++RESET ROLE;
++SELECT t('revoke deleted k2 session rows', NOT EXISTS (SELECT 1 FROM client_portal_sessions WHERE contact_id = 'c0000000-0000-0000-0000-0000000000a2'));
++
++-- ── contact deleted ────────────────────────────────────────────────
++DELETE FROM client_contacts WHERE id = 'c0000000-0000-0000-0000-0000000000b9';
++SELECT t('deleting a contact removes their sessions and login', NOT EXISTS (SELECT 1 FROM client_portal_sessions WHERE session_token IN ('tok-kx','tok-forged'))
++          AND NOT EXISTS (SELECT 1 FROM client_contact_portal_access WHERE contact_id = 'c0000000-0000-0000-0000-0000000000b9'));
++
++\echo
++SELECT (CASE WHEN ok THEN 'PASS ' ELSE 'FAIL ' END) || name || coalesce('  [' || detail || ']', '') AS result FROM test_results ORDER BY n;
++SELECT count(*) FILTER (WHERE ok) || ' passed, ' || count(*) FILTER (WHERE NOT ok) || ' failed' AS summary FROM test_results;
+diff --git a/supabase/tests/portal-access/password_test.ts b/supabase/tests/portal-access/password_test.ts
+new file mode 100644
+index 0000000..224b7c5
+--- /dev/null
++++ b/supabase/tests/portal-access/password_test.ts
+@@ -0,0 +1,21 @@
++import { hashPassword, verifyPassword, normalizeEmail, equalStrings } from "../../functions/_shared/portalPassword.ts";
++const ok = (n: string, c: boolean) => { console.log((c ? "PASS " : "FAIL ") + n); if (!c) Deno.exitCode = 1; };
++// legacy hash exactly as the old code made it
++const legacy = async (p: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(p + "magnus_portal_2026")))).map(b => b.toString(16).padStart(2, "0")).join("");
++const L = await legacy("hunter22");
++ok("legacy hash verifies and asks for rehash", JSON.stringify(await verifyPassword("hunter22", L)) === '{"ok":true,"needsRehash":true}');
++ok("legacy hash rejects wrong password", !(await verifyPassword("hunter23", L)).ok);
++ok("legacy uppercase hex still verifies", (await verifyPassword("hunter22", L.toUpperCase())).ok);
++const h1 = await hashPassword("hunter22"), h2 = await hashPassword("hunter22");
++ok("new format shape", /^pbkdf2_sha256\$600000\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/.test(h1));
++ok("per-user salt: same password, different hashes", h1 !== h2);
++ok("new hash verifies, no rehash", JSON.stringify(await verifyPassword("hunter22", h1)) === '{"ok":true,"needsRehash":false}');
++ok("new hash rejects wrong password", !(await verifyPassword("Hunter22", h1)).ok);
++const low = h1.replace("$600000$", "$1000$");
++ok("tampered iteration count fails", !(await verifyPassword("hunter22", low)).ok);
++ok("garbage / null / empty fail", !(await verifyPassword("x", "nope")).ok && !(await verifyPassword("x", null)).ok && !(await verifyPassword("", "")).ok);
++ok("absurd iteration count rejected", !(await verifyPassword("x", "pbkdf2_sha256$999999999$AA==$AA==")).ok);
++ok("normal email accepted", normalizeEmail("  Officer.One+site@FFTP.org.jm ") === "officer.one+site@fftp.org.jm");
++for (const bad of ["a@b.c,portal_enabled.eq.true", "x@y.z,id.neq.00000000-0000-0000-0000-000000000000", "a@b.c)", "a b@c.d", "a@b", "@b.c", "a@b.c'", "a@(b).c", ""])
++  ok(`email rejected: ${JSON.stringify(bad)}`, normalizeEmail(bad) === null);
++ok("equalStrings", equalStrings("abc", "abc") && !equalStrings("abc", "abd") && !equalStrings("abc", "ab"));
+diff --git a/supabase/tests/portal-access/run.sh b/supabase/tests/portal-access/run.sh
+new file mode 100755
+index 0000000..e402f88
+--- /dev/null
++++ b/supabase/tests/portal-access/run.sh
+@@ -0,0 +1,25 @@
++#!/bin/bash
++# Portal access tests against a throwaway local Postgres (NOT your Supabase project).
++#   PGHOST/PGPORT/PGUSER point at any local Postgres 15+ you can create databases on.
++#   ./run.sh                -> manager regression (before vs after the contact migration) + 71 leakage tests
++#   deno run password_test.ts -> password hashing tests
++set -e
++cd "$(dirname "$0")"
++M=../../migrations
++P="psql -v ON_ERROR_STOP=1 -q -d portaltest"
++psql -qc "DROP DATABASE IF EXISTS portaltest" -c "CREATE DATABASE portaltest"
++$P -f stub.sql
++# The portal migrations as they stand before contact scoping, in order
++for f in 20260829000000_lock_down_client_comments_anon_rls 20260919000000_client_portal_activity 20260919000100_tighten_insert_portal_comment \
++  20260919120000_share_with_client 20260920000000_portal_estimate_view_event 20260920100000_portal_server_functions \
++  20260920110000_portal_contract_schedule 20260921000000_portal_contract_document_data 20260921000100_portal_contract_project_address \
++  20260921100000_lock_down_portal_public_access 20260922000000_portal_project_picker 20260930000000_create_client_contacts; do
++  $P -f $M/$f.sql 2>&1 | grep -v NOTICE || true
++done
++$P -f fixtures.sql
++$P -v phase=before -f capture.sql
++$P -f $M/20260936000000_contact_scoped_portal_access.sql
++$P -v phase=after -f capture.sql
++echo "--- manager outputs that changed (should be none):"
++$P -Atc "SELECT b.name FROM regress b JOIN regress a ON a.name=b.name AND a.phase='after' WHERE b.phase='before' AND a.out IS DISTINCT FROM b.out"
++$P -f leak_tests.sql 2>&1 | grep -E "PASS|FAIL|passed"
+diff --git a/supabase/tests/portal-access/stub.sql b/supabase/tests/portal-access/stub.sql
+new file mode 100644
+index 0000000..979c0e2
+--- /dev/null
++++ b/supabase/tests/portal-access/stub.sql
+@@ -0,0 +1,41 @@
++-- Minimal stand-in for the live schema: only tables/columns the portal functions touch.
++DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=$q$anon$q$) THEN CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; END IF; END $$;
++CREATE SCHEMA auth;
++CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('test.uid', true),'')::uuid $$;
++GRANT USAGE ON SCHEMA auth TO anon, authenticated; GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated;
++GRANT USAGE ON SCHEMA public TO anon, authenticated;
++
++CREATE TABLE companies (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text);
++CREATE TABLE user_profiles (id uuid PRIMARY KEY, company_id uuid, role text);
++CREATE TABLE company_settings (company_id uuid, company_name text, logo_url text, phone text, email text, address_line1 text,
++  address_line2 text, parish text, tagline text, watermark_url text, watermark_enabled bool, watermark_opacity numeric, watermark_size numeric);
++CREATE TABLE clients (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid, name text, contact_name text, phone text, email text,
++  address text, portal_email text, portal_password_hash text, portal_activated_at timestamptz, portal_enabled bool DEFAULT false,
++  portal_token text DEFAULT gen_random_uuid()::text, portal_reset_token text, portal_reset_expires_at timestamptz, updated_at timestamptz DEFAULT now());
++CREATE TABLE projects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid, client_id uuid REFERENCES clients(id), name text,
++  status text DEFAULT 'active', site_address text, start_date date, end_date date, created_at timestamptz DEFAULT now());
++CREATE POLICY projects_select ON projects FOR SELECT USING (true);
++CREATE TABLE project_tasks (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), project_id uuid, status text);
++CREATE TABLE project_photos (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), project_id uuid, photo_url text, caption text, created_at timestamptz DEFAULT now());
++CREATE TABLE project_daily_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), project_id uuid, log_date date DEFAULT current_date, weather text,
++  workers_count int, work_performed text, deliveries text);
++CREATE TABLE change_orders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), project_id uuid, title text, description text, amount numeric,
++  status text DEFAULT 'pending', client_response text, responded_at timestamptz, created_at timestamptz DEFAULT now());
++CREATE TABLE client_comments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), client_id uuid, project_id uuid, message text, sender_type text,
++  created_at timestamptz DEFAULT clock_timestamp());
++CREATE TABLE client_reviews (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), client_id uuid, project_id uuid, rating int, comment text);
++CREATE TABLE client_invoices (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid, client_id uuid, project_id uuid, status text DEFAULT 'sent',
++  invoice_date date DEFAULT current_date, sent_date date, created_by uuid, reminder_enabled bool, reminder_days_before int, reminder_repeat_days int,
++  last_reminder_sent_at timestamptz, updated_at timestamptz);
++CREATE TABLE client_contracts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid, client_id uuid, project_id uuid, status text DEFAULT 'sent',
++  notes text, created_by uuid, contractor_signed_by uuid, client_signature_token text, created_at timestamptz DEFAULT now(), updated_at timestamptz);
++CREATE TABLE estimate_headers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), project_id uuid, title text, version int, status text, updated_at timestamptz);
++CREATE TABLE boq_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
++CREATE TABLE contract_payment_schedules (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), contract_id uuid, milestone_name text, milestone_description text,
++  due_date date, amount numeric, percent_complete numeric, sort_order int);
++CREATE TABLE client_portal_sessions (id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, client_id uuid, session_token text NOT NULL,
++  created_at timestamptz DEFAULT now(), expires_at timestamptz DEFAULT (now() + '30 days'::interval), device_info text);
++CREATE POLICY "Public session management" ON client_portal_sessions USING (true);
++-- what Supabase grants by default
++GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
++ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+-- 
+2.43.0
+

@@ -5,6 +5,10 @@
 // worker's own passport / profile photo (the same rule as verify-photo: a staff-photos or workers/passport file of the company's own folder), never an ID scan.
 //
 // Body: { action: "photo", token }   Returns 200 { url }   404 { error: "no_photo" }
+//
+// Clock in / out selfie (migration 20260987000000): { action: "clock_photo", token, image: "data:image/jpeg;base64,..." } stores the JPEG (at most 1.5 MB) in
+// private-files at <company>/attendance/<yyyy-mm>/<worker>/<random>.jpg and returns 200 { path }. worker_clock_in / worker_clock_out only accept a path in that
+// worker's own folder. The worker can't read the photo back; only the office can.
 // The page calls it with the anon key (a JWT), so verify_jwt stays true.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { PRIVATE_BUCKET, SIGNED_URL_TTL_SECONDS, isShowablePhotoPath, privatePhotoPath } from "../verify-photo/logic.ts";
@@ -30,9 +34,23 @@ Deno.serve(async (req) => {
     let body: Record<string, unknown>;
     try { body = (await req.json()) as Record<string, unknown>; } catch { return jsonResponse({ error: "Invalid request" }, 400); }
     const token = String(body.token ?? "");
-    if (body.action !== "photo" || token.length < 20 || token.length > 200) return noPhoto();
+    if ((body.action !== "photo" && body.action !== "clock_photo") || token.length < 20 || token.length > 200) return noPhoto();
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+
+    if (body.action === "clock_photo") {
+      const { data: who, error: whoErr } = await admin.rpc("worker_portal_photo_ref", { p_token: token });   // checks the session
+      if (whoErr || !who?.worker_id || !who?.company_id) return jsonResponse({ error: "Your session has ended. Sign in again." }, 401);
+      const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(body.image ?? ""));
+      if (!m) return jsonResponse({ error: "No photo." }, 400);
+      const bytes = Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0));
+      if (bytes.length < 1000 || bytes.length > 1_500_000 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return jsonResponse({ error: "That photo could not be used." }, 400);
+      const month = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 7);          // Jamaica time
+      const path = `${who.company_id}/attendance/${month}/${who.worker_id}/${crypto.randomUUID()}.jpg`;
+      const { error: upErr } = await admin.storage.from(PRIVATE_BUCKET).upload(path, bytes, { contentType: "image/jpeg", upsert: false });
+      if (upErr) return jsonResponse({ error: "Could not save the photo." }, 500);
+      return jsonResponse({ path });
+    }
     const { data: ref, error } = await admin.rpc("worker_portal_photo_ref", { p_token: token });
     if (error || !ref?.photo) return noPhoto();
 
