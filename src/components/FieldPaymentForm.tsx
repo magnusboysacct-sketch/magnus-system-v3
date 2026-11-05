@@ -17,6 +17,7 @@ import {
   ListTodo, TrendingUp, CreditCard, Flag
 } from "lucide-react";
 import { cn } from "../components/ui";
+import type { FromClock } from "../lib/attendance";
 
 // Payment type determines the flow
 type PaymentType = "advance"|"progress"|"final"|"payment";
@@ -128,7 +129,7 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
 // The receipt document now lives in lib/receiptHtml.ts (shared with the public receipt page); re-exported for existing imports.
 export { generateReceiptHTML };
 
-interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string;worker_id?:string|null}|null; }
+interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string;worker_id?:string|null;fromClock?:FromClock|null}|null; }
 
 export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldPaymentFormProps) {
   const { projects } = useProjectContext();
@@ -163,12 +164,16 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     payment_type:(prefillWorker?.payment_type as PaymentType)||"payment",
     worker_name:prefillWorker?.name||"", worker_id_number:prefillWorker?.id_number||"", worker_phone:prefillWorker?.phone||"",
     worker_address:"", worker_ref:"", worker_id:prefillWorker?.worker_id||"",
-    project_id:"", milestone_id:"", task_id:"",
+    // filled in from approved clocked time (Clock In → Approve & pay) when that is how the form was opened
+    project_id:prefillWorker?.fromClock?.project_id||"", milestone_id:"", task_id:"",
     task_name:"", trade_type:"", unit:"",
-    rate_type:"task", task_quantity:"", task_unit_rate:"",
-    days_worked:"1", rate_per_day:"", hours_worked:"", rate_per_hour:"",
+    rate_type:prefillWorker?.fromClock?.rate_type||"task", task_quantity:"", task_unit_rate:"",
+    days_worked:prefillWorker?.fromClock?String(prefillWorker.fromClock.days_worked):"1",
+    rate_per_day:prefillWorker?.fromClock?.rate_type==="day"&&prefillWorker.fromClock.rate?String(prefillWorker.fromClock.rate):"",
+    hours_worked:prefillWorker?.fromClock?.rate_type==="hour"?String(prefillWorker.fromClock.hours_worked):"",
+    rate_per_hour:prefillWorker?.fromClock?.rate_type==="hour"&&prefillWorker.fromClock.rate?String(prefillWorker.fromClock.rate):"",
     total_amount:"", advance_amount:"", balance_due:"",
-    payment_method:"cash", notes:"",
+    payment_method:"cash", notes:prefillWorker?.fromClock?.notes||"",
     signature_data:"", supervisor_name:"",
   });
 
@@ -387,6 +392,12 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       if(pe)throw pe;
       if(!payment)throw new Error("Failed to save payment");
       setSavedPaymentId(payment.id);
+
+      // paid from clocked time: link those shifts to this payment so they can't be paid twice
+      if(prefillWorker?.fromClock?.shift_ids.length){
+        const {error:me}=await supabase.rpc("attendance_mark_paid",{p_shift_ids:prefillWorker.fromClock.shift_ids,p_payment_id:payment.id});
+        if(me)setLinkNote(`Payment saved, but the clocked time was not marked as paid: ${me.message}`);
+      }
 
       // Save signature record
       if(form.signature_data){

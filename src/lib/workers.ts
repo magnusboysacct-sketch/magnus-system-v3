@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 
 export type WorkerType = "employee" | "subcontractor" | "crew_lead";
 export type WorkerStatus = "active" | "inactive" | "terminated";
-export type PayType = "hourly" | "salary" | "contract";
+export type PayType = "hourly" | "daily" | "salary" | "contract";
 
 // Every workers column except ssn_last_4, bank_account_number and bank_routing_number, which only payroll staff can read (get_worker_payroll_fields).
 // select("*") would now be refused by the database, so worker reads name their columns.

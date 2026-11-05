@@ -30,7 +30,7 @@ import {
 
 type WorkerType = "employee" | "subcontractor" | "crew_lead";
 type WorkerStatus = "active" | "inactive" | "terminated";
-type PayType = "hourly" | "salary" | "contract";
+type PayType = "hourly" | "daily" | "salary" | "contract";
 
 type Worker = {
   id: string;
@@ -215,7 +215,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
         <div className="flex items-center gap-1.5 mb-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5">
           <DollarSign size={10} className="text-emerald-400"/>
           <span className="text-[11px] font-semibold text-emerald-300">
-            {fmt(worker.pay_rate)} / {worker.pay_type === "hourly" ? "hr" : worker.pay_type === "salary" ? "yr" : "contract"}
+            {fmt(worker.pay_rate)} / {worker.pay_type === "hourly" ? "hr" : worker.pay_type === "daily" ? "day" : worker.pay_type === "salary" ? "yr" : "contract"}
           </span>
           {worker.overtime_rate && (
             <span className="text-[9px] text-emerald-600 ml-1">OT: {fmt(worker.overtime_rate)}/hr</span>
@@ -882,7 +882,7 @@ export default function WorkersPage() {
                     <Td>
                       {w.pay_rate ? (
                         <span className="text-xs font-semibold text-emerald-400">
-                          {fmt(w.pay_rate)}/{w.pay_type === "hourly" ? "hr" : w.pay_type === "salary" ? "yr" : "ct"}
+                          {fmt(w.pay_rate)}/{w.pay_type === "hourly" ? "hr" : w.pay_type === "daily" ? "day" : w.pay_type === "salary" ? "yr" : "ct"}
                         </span>
                       ) : <span className="text-slate-700">—</span>}
                     </Td>
@@ -1136,6 +1136,7 @@ export default function WorkersPage() {
               <Select value={form.pay_type}
                 onChange={e => setForm(f => ({ ...f, pay_type: e.target.value as PayType }))}>
                 <option value="hourly">Hourly</option>
+                <option value="daily">Daily rate</option>
                 <option value="salary">Salary</option>
                 <option value="contract">Contract</option>
               </Select>

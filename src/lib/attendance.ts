@@ -194,6 +194,7 @@ export interface StaffShift {
   out_lat: number | null; out_lng: number | null; out_distance_m: number | null; out_photo_path: string | null;
   site_radius_m: number | null; last_on_site_at: string | null; last_check_at: string | null; first_off_site_at: string | null;
   paid_until: string | null; minutes_worked: number | null; flags: string[]; clocked_in_by: string | null; clocked_out_by: string | null; note: string | null;
+  approval?: "pending" | "approved" | "rejected"; approved_minutes?: number | null; approval_note?: string | null; field_payment_id?: string | null;
   workers: { first_name: string | null; last_name: string | null; employee_id: string | null } | null;
   projects: { name: string | null } | null;
 }
@@ -279,4 +280,54 @@ export async function staffAddWorkPhoto(companyId: string, workerId: string, dat
   if (upErr) throw new Error("Could not save the picture.");
   const { error } = await supabase.rpc("attendance_staff_add_media", { p_worker: workerId, p_kind: "photo", p_path: path, p_seconds: null, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null });
   if (error) throw new Error(error.message);
+}
+
+// ── step 3: approve the time, then pay it as a field payment ───────────────────────────────────────────────
+export const HALF_DAY_UNDER_MINUTES = 5 * 60;      // daily-rate workers: under 5 hours on a date = half a day
+export interface PayShift extends StaffShift {
+  workers: { first_name: string | null; last_name: string | null; employee_id: string | null; pay_type: string | null; pay_rate: number | null; phone: string | null; id_number: string | null } | null;
+}
+// Finished shifts not yet paid (waiting or approved) from the last p_days days.
+export async function fetchShiftsToApprove(companyId: string, fromDay: string): Promise<PayShift[]> {
+  await supabase.rpc("attendance_close_stale");
+  const { data, error } = await supabase.from("attendance_shifts")
+    .select("*, workers(first_name,last_name,employee_id,pay_type,pay_rate,phone,id_number), projects(name)")
+    .eq("company_id", companyId).eq("status", "closed").is("field_payment_id", null).neq("approval", "rejected")
+    .gte("work_date", fromDay).order("work_date", { ascending: true }).order("clock_in_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []) as unknown as PayShift[];
+}
+async function call<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data as T;
+}
+export const approveShifts = (ids: string[], minutes?: number | null, note?: string | null) =>
+  call<number>("attendance_approve", { p_shift_ids: ids, p_minutes: minutes ?? null, p_note: note ?? null });
+export const rejectShifts = (ids: string[], note: string) => call<number>("attendance_reject", { p_shift_ids: ids, p_note: note });
+export const unapproveShifts = (ids: string[]) => call<number>("attendance_unapprove", { p_shift_ids: ids });
+export const markShiftsPaid = (ids: string[], paymentId: string) => call<number>("attendance_mark_paid", { p_shift_ids: ids, p_payment_id: paymentId });
+
+// What the approved shifts come to. hourly: hours x rate. daily: per date, 5 hours or more = 1 day, less = half a day.
+// Other pay types (salary, contract, none): hours only; the amount is typed in the field payment.
+export interface PayWorkOut { rateType: "hour" | "day"; hours: number; days: number; rate: number; total: number; dates: string[] }
+export function workOutPay(shifts: { work_date: string; approved_minutes?: number | null; minutes_worked: number | null }[], payType: string | null, payRate: number | null): PayWorkOut {
+  const byDate = new Map<string, number>();
+  shifts.forEach((s) => byDate.set(s.work_date, (byDate.get(s.work_date) || 0) + (s.approved_minutes ?? s.minutes_worked ?? 0)));
+  const minutes = Array.from(byDate.values()).reduce((a, b) => a + b, 0);
+  const hours = Math.round((minutes / 60) * 100) / 100;
+  const rate = Number(payRate) || 0;
+  const dates = Array.from(byDate.keys()).sort();
+  if (payType === "daily") {
+    const days = Array.from(byDate.values()).reduce((t, m) => t + (m <= 0 ? 0 : m >= HALF_DAY_UNDER_MINUTES ? 1 : 0.5), 0);
+    return { rateType: "day", hours, days, rate, total: Math.round(days * rate * 100) / 100, dates };
+  }
+  return { rateType: "hour", hours, days: dates.length, rate: payType === "hourly" ? rate : 0, total: payType === "hourly" ? Math.round(hours * rate * 100) / 100 : 0, dates };
+}
+
+// Handed to the field payment form (router state) so the payment is filled in from the clock.
+export interface FromClock {
+  shift_ids: string[]; project_id: string | null; rate_type: "hour" | "day";
+  hours_worked: number; days_worked: number; rate: number; notes: string;
+  worker: { id: string; name: string; id_number: string; phone: string };
 }

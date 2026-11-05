@@ -2,6 +2,8 @@
 // Payment list + detail modal with PDF, WhatsApp, Email, New Advance, Pay Work, Final Payment
 import { withResolvedUrls } from "../lib/storageRefs";
 import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import type { FromClock } from "../lib/attendance";
 import { companyDisplayName } from "../lib/companyName";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -73,7 +75,18 @@ export default function FieldPaymentsPage() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [showForm, setShowForm] = useState(false);
-  const [prefillWorker, setPrefillWorker] = useState<{name:string;id_number:string;phone:string;payment_type:string;worker_id?:string|null}|null>(null);
+  const [prefillWorker, setPrefillWorker] = useState<{name:string;id_number:string;phone:string;payment_type:string;worker_id?:string|null;fromClock?:FromClock|null}|null>(null);
+  // "Pay" on Clock In → Approve & pay: open the form filled in from the approved clocked time (router state, used once)
+  const location = useLocation();
+  const navigateTo = useNavigate();
+  useEffect(()=>{
+    const fc=(location.state as {fromClock?:FromClock}|null)?.fromClock;
+    if(!fc)return;
+    setPrefillWorker({name:fc.worker.name,id_number:fc.worker.id_number,phone:fc.worker.phone,payment_type:"payment",worker_id:fc.worker.id,fromClock:fc});
+    setShowForm(true);
+    navigateTo(location.pathname,{replace:true,state:null});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   const [selected, setSelected] = useState<Payment|null>(null);
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
