@@ -5,8 +5,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addMedia, blobToDataUrl, clockAnswer, clockCheck, clockIn, clockMissed, stampPhoto, stampWords, startRecording, uploadWorkFile, clockOut, clockState, distanceWords, getFix, hoursWords, setVoiceOn, shrinkPhoto, speak, timeWords, uploadClockPhoto, voiceOn,
-  type ClockResult, type ClockState,
+  OfflineError, looksOffline, type ClockResult, type ClockShift, type ClockState, type Fix,
 } from "../lib/attendance";
+import { flushQueue, queueAdd, queueAll, tokTag, type QItem } from "../lib/clockQueue";
+
+// The last clock screen seen, so the clock still opens with no signal (step 4).
+const STATE_KEY = "magnus_clock_state";
+function saveState(s: ClockState) { try { localStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch { /* fine */ } }
+function loadState(): ClockState | null { try { const v = localStorage.getItem(STATE_KEY); return v ? JSON.parse(v) as ClockState : null; } catch { return null; } }
+const isOffline = (e: unknown) => e instanceof OfflineError || looksOffline(e);
+const KEPT = "No signal. It is saved on this phone and sends by itself when there is signal. Keep this page open.";
 
 type Banner = { kind: "good" | "warn" | "bad"; icon: string; text: string } | null;
 const CHECK_EVERY_MS = 10 * 60 * 1000;
@@ -35,22 +43,68 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
   const [askSince, setAskSince] = useState<number | null>(null);     // when "Are you still on site?" went up
   const askAt = useRef<number>(nextAsk());
   const fileRef = useRef<HTMLInputElement>(null);
+  const [queue, setQueue] = useState<QItem[]>([]);                  // kept on the phone, waiting for signal
+  const queueRef = useRef<QItem[]>([]);
+  const [offline, setOffline] = useState(false);
+
+  const reloadQueue = useCallback(async () => { const q = (await queueAll()).filter((x) => !x.tok || x.tok === tokTag(token)); queueRef.current = q; setQueue(q); return q; }, [token]);
 
   const refresh = useCallback(async () => {
     try {
       const s = await clockState(token);
       if (!s) { onSessionEnded(); return; }
-      setSt(s);
+      setSt(s); saveState(s); setOffline(false);
       setProjectId((p) => p || s.open?.project_id || s.last_project_id || (s.projects.length === 1 ? s.projects[0].id : ""));
     } catch (e) {
+      if (isOffline(e)) {
+        setOffline(true);
+        const c = loadState();
+        if (c) { setSt((cur) => cur || c); setProjectId((p) => p || c.open?.project_id || c.last_project_id || (c.projects.length === 1 ? c.projects[0].id : "")); }
+        return;
+      }
       setBanner({ kind: "bad", icon: "📶", text: e instanceof Error ? e.message : "No connection. Try again." });
     }
   }, [token, onSessionEnded]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  // Send what was kept on the phone: now, when the signal comes back, and every minute.
+  const flush = useCallback(async () => {
+    if (!queueRef.current.length) return true;
+    const r = await flushQueue(token);
+    const left = await reloadQueue();
+    if (r.refused.length) setBanner({ kind: "warn", icon: "⚠️", text: `Sent, but the office system said: ${r.refused.join(" · ")}` });
+    else if (r.sent && !left.length) { setBanner({ kind: "good", icon: "📶", text: "Signal is back. Everything was sent." }); speak("Signal is back. Everything was sent."); }
+    if (r.sent || r.refused.length) await refresh();
+    setOffline(r.offline);
+    return left.length === 0;
+  }, [token, reloadQueue, refresh]);
+
+  useEffect(() => { void reloadQueue().then(() => flush()).then(() => refresh()); }, [reloadQueue, flush, refresh]);
+  useEffect(() => {
+    const on = () => { void flush(); };
+    window.addEventListener("online", on);
+    const t = setInterval(on, 60000);
+    return () => { window.removeEventListener("online", on); clearInterval(t); };
+  }, [flush]);
+
+  // Keep it on the phone (no signal).
+  const keep = useCallback(async (item: QItem, quiet = false) => {
+    await queueAdd({ ...item, tok: tokTag(token) }); await reloadQueue(); setOffline(true);
+    if (!quiet) { setBanner({ kind: "warn", icon: "📶", text: KEPT }); speak("No signal. It is saved on the phone."); }
+  }, [reloadQueue, token]);
+  // Something new goes to the server only when nothing older is still waiting (the order matters).
+  const canSendNow = useCallback(async () => queueRef.current.length === 0 || await flush(), [flush]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
-  const open = st?.open ?? null;
+  // What the worker sees: the server's state, then what is still waiting on the phone, in order.
+  let open: ClockShift | null = st?.open ?? null;
+  for (const q of queue) {
+    if (q.kind === "in") open = { id: "local", project_id: q.projectId || null, project: q.projectName || null, work_date: q.at.slice(0, 10), status: "open", clock_in_at: q.at,
+      clock_out_at: null, out_method: null, in_distance_m: null, radius_m: null, minutes_worked: null, paid_until: null, last_on_site_at: null, off_site_since: null, flags: [], photos: 0, voices: 0 };
+    else if (q.kind === "out") open = null;
+    else if (open && q.kind === "photo") open = { ...open, photos: (open.photos || 0) + 1 };
+    else if (open && q.kind === "voice") open = { ...open, voices: (open.voices || 0) + 1 };
+  }
+  const isOpen = open != null;
 
   // what a site check says
   const handleCheck = useCallback((r: ClockResult) => {
@@ -69,23 +123,27 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
 
   // the 10-minute site checks while this page is open
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     let stop = false;
     const run = async () => {
       if (document.visibilityState !== "visible") return;
       const fix = await getFix(15000);
       if (stop) return;
-      try { handleCheck(await clockCheck(token, fix)); } catch { /* no signal: next time */ }
+      const at = new Date().toISOString();
+      try {
+        if (!(await canSendNow())) { await keep({ kind: "check", at, fix }, true); return; }
+        handleCheck(await clockCheck(token, fix));
+      } catch (e) { if (isOffline(e)) await keep({ kind: "check", at, fix }, true); }
     };
     const t = setInterval(run, CHECK_EVERY_MS);
     const onVis = () => { if (document.visibilityState === "visible") void run(); };
     document.addEventListener("visibilitychange", onVis);
     return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
-  }, [open, token, handleCheck]);
+  }, [isOpen, token, handleCheck, canSendNow, keep]);
 
   // "Are you still on site?": time to ask, and no answer in 15 minutes
   useEffect(() => {
-    if (!open) { setAskSince(null); return; }
+    if (!isOpen) { setAskSince(null); return; }
     const t = setInterval(() => {
       if (document.visibilityState !== "visible") return;     // asked when the page is looked at again
       const n = Date.now();
@@ -93,21 +151,28 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
         setAskSince(n); buzz(); speak("Are you still on the site? Tap the yellow button.");
       } else if (askSince != null && n - askSince >= ANSWER_MS) {
         setAskSince(null); askAt.current = nextAsk();
-        void clockMissed(token).catch(() => { /* no signal */ });
+        void clockMissed(token).catch((e) => { if (isOffline(e)) void keep({ kind: "missed", at: new Date().toISOString() }, true); });
         setBanner({ kind: "warn", icon: "❓", text: "You did not answer \"Are you on site?\". The office will see this." });
       } else if (askSince != null && (n - askSince) % (5 * 60 * 1000) < 30000) {
         buzz(); speak("Tap the yellow button.");                // remind every 5 minutes
       }
     }, 30000);
     return () => clearInterval(t);
-  }, [open, askSince, token]);
+  }, [isOpen, askSince, token, keep]);
 
   async function answerAsk() {
     setAskSince(null); askAt.current = nextAsk();
     setBusy("Checking where you are…");
-    try { const fix = await getFix(15000); handleCheck(await clockAnswer(token, fix)); if (fix) speak("Thank you."); }
-    catch { setBanner({ kind: "warn", icon: "📶", text: "No signal. Your answer was not sent." }); }
-    finally { setBusy(null); }
+    const at = new Date().toISOString();
+    let fix: Fix | null = null;
+    try {
+      fix = await getFix(15000);
+      if (!(await canSendNow())) { await keep({ kind: "answer", at, fix }); return; }
+      handleCheck(await clockAnswer(token, fix)); if (fix) speak("Thank you.");
+    } catch (e) {
+      if (isOffline(e)) await keep({ kind: "answer", at, fix });
+      else setBanner({ kind: "warn", icon: "📶", text: e instanceof Error ? e.message : "Your answer was not sent." });
+    } finally { setBusy(null); }
   }
 
   function toggleVoice() { const v = !voice; setVoiceOn(v); setVoice(v); if (v) speak("Voice is on."); }
@@ -122,13 +187,22 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
   }
 
   async function doClockIn(file: File | null) {
+    const at = new Date().toISOString();
+    let image: string | null = null, fix: Fix | null = null;
+    const projectName = st?.projects.find((p) => p.id === projectId)?.name || "";
+    const keepIn = async () => {
+      await keep({ kind: "in", at, fix, projectId, projectName, image }, true);
+      setBanner({ kind: "warn", icon: "📶", text: `You are clocked in. ${KEPT}` });
+      speak(`You are clocked in at ${sayTime(at)}. There is no signal, so it is saved on the phone.`);
+    };
     try {
-      let photo: string | null = null;
-      if (file) { setBusy("Saving your picture…"); photo = await uploadClockPhoto(token, await shrinkPhoto(file)); }
+      if (file) { setBusy("Saving your picture…"); image = await shrinkPhoto(file); }
       setBusy("Finding where you are…");
-      const fix = await getFix();
+      fix = await getFix();
       setNoGps(!fix);
       setBusy("Clocking you in…");
+      if (!(await canSendNow())) { await keepIn(); return; }
+      const photo = image ? await uploadClockPhoto(token, image) : null;
       const r = await clockIn(token, projectId, fix, photo);
       const at = sayTime(new Date().toISOString());
       if (r.status === "on_site") {
@@ -147,6 +221,7 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
       if (!photo && file) setBanner({ kind: "warn", icon: "📷", text: "You are clocked in, but the picture did not save." });
       await refresh();
     } catch (e) {
+      if (isOffline(e)) { await keepIn(); return; }
       const msg = e instanceof Error ? e.message : "Could not clock in. Try again.";
       setBanner({ kind: "bad", icon: "❌", text: msg });
       speak("That did not work. Try again.");
@@ -160,10 +235,19 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
   }
 
   async function finishClockOut() {
+    const at = new Date().toISOString();
+    let fix: Fix | null = null;
+    const keepOut = async () => {
+      await keep({ kind: "out", at, fix }, true);
+      setOutStep(false);
+      setBanner({ kind: "warn", icon: "👋", text: `You are clocked out. ${KEPT}` });
+      speak("You are clocked out. There is no signal, so it is saved on the phone. Keep this page open until it sends.");
+    };
     try {
       setBusy("Finding where you are…");
-      const fix = await getFix();
+      fix = await getFix();
       setBusy("Clocking you out…");
+      if (!(await canSendNow())) { await keepOut(); return; }
       const s = await clockOut(token, fix, null);
       const worked = hoursWords(s.minutes_worked);
       if (s.flags.includes("out_far")) {
@@ -176,6 +260,7 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
       setOutStep(false);
       await refresh();
     } catch (e) {
+      if (isOffline(e)) { await keepOut(); return; }
       setBanner({ kind: "bad", icon: "❌", text: e instanceof Error ? e.message : "Could not clock out. Try again." });
       speak("That did not work. Try again.");
     } finally { setBusy(null); }
@@ -184,18 +269,23 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
   // A picture of the work: name, site and time are written on it
   function pressWorkPhoto() { speak("Take a picture of the work."); workRef.current?.click(); }
   async function saveWorkPhoto(file: File) {
+    const at = new Date().toISOString();
+    let data = "", fix: Fix | null = null;
     try {
       setBusy("Saving your picture…");
       const project = open?.project || st?.today[st.today.length - 1]?.project || "";
-      const data = await stampPhoto(file, [[st?.worker_name, project].filter(Boolean).join(" · "), stampWords()]);
-      const [path, fix] = await Promise.all([uploadWorkFile(token, "photo", data), getFix(10000)]);
-      if (!path) throw new Error("The picture did not save. Check your signal and try again.");
+      data = await stampPhoto(file, [[st?.worker_name, project].filter(Boolean).join(" · "), stampWords()]);
+      fix = await getFix(10000);
+      if (!(await canSendNow())) { await keep({ kind: "photo", at, fix, image: data }); setThumbs((t) => [...t, data].slice(-6)); return; }
+      const path = await uploadWorkFile(token, "photo", data);
+      if (!path) throw new Error("The picture did not save. Try again.");
       const r = await addMedia(token, "photo", path, null, fix);
       setThumbs((t) => [...t, data].slice(-6));
       setBanner({ kind: "good", icon: "📷", text: `Picture saved. ${r.photos} today.` });
       speak(outStep ? "Picture saved. Take another one, or tap the red button to finish." : "Picture saved.");
       await refresh();
     } catch (e) {
+      if (isOffline(e) && data) { await keep({ kind: "photo", at, fix, image: data }); setThumbs((t) => [...t, data].slice(-6)); return; }
       setBanner({ kind: "bad", icon: "📷", text: e instanceof Error ? e.message : "The picture did not save." });
       speak("The picture did not save. Try again.");
     } finally { setBusy(null); }
@@ -221,21 +311,26 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
     setRecording(false);
     const rec = await r.stop();
     if (!rec || rec.seconds < 1) { speak("Hold the button down while you talk."); setBanner({ kind: "warn", icon: "🎤", text: "Hold the button down while you talk, then let go." }); return; }
+    const at = new Date().toISOString();
+    let audio = "";
     try {
       setBusy("Saving your voice note…");
-      const path = await uploadWorkFile(token, "voice", await blobToDataUrl(rec.blob));
-      if (!path) throw new Error("The voice note did not save. Check your signal and try again.");
+      audio = await blobToDataUrl(rec.blob);
+      if (!(await canSendNow())) { await keep({ kind: "voice", at, audio, seconds: rec.seconds }); return; }
+      const path = await uploadWorkFile(token, "voice", audio);
+      if (!path) throw new Error("The voice note did not save. Try again.");
       const r2 = await addMedia(token, "voice", path, rec.seconds, null);
       setBanner({ kind: "good", icon: "🎤", text: `Voice note saved. ${r2.voices} today.` });
       speak("Voice note saved.");
       await refresh();
     } catch (e) {
+      if (isOffline(e) && audio) { await keep({ kind: "voice", at, audio, seconds: rec.seconds }); return; }
       setBanner({ kind: "bad", icon: "🎤", text: e instanceof Error ? e.message : "The voice note did not save." });
     } finally { setBusy(null); }
   }
   useEffect(() => () => { recRef.current?.cancel(); if (recTimer.current) clearTimeout(recTimer.current); }, []);
 
-  if (!st) return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-xl text-slate-500">Loading the clock…</div>;
+  if (!st) return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-xl text-slate-500">{offline ? "📶❌ No signal. Open the clock once with signal, then it works without signal too." : "Loading the clock…"}</div>;
 
   const workedMin = open ? Math.max(0, Math.floor((now - new Date(open.clock_in_at).getTime()) / 60000)) : 0;
   const bannerStyle = banner?.kind === "good" ? "border-green-300 bg-green-50 text-green-900" : banner?.kind === "warn" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-red-300 bg-red-50 text-red-900";
@@ -253,6 +348,12 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
         <button onClick={toggleVoice} aria-label={voice ? "Turn voice off" : "Turn voice on"} className="min-h-[48px] min-w-[48px] rounded-xl border-2 border-slate-300 text-2xl">{voice ? "🔊" : "🔇"}</button>
       </div>
 
+      {(offline || queue.length > 0) && (
+        <div className="rounded-2xl border-2 border-slate-300 bg-slate-100 px-4 py-3 text-lg text-slate-800">
+          📶❌ {offline ? "No signal." : "Sending…"}{queue.length > 0 && <> ⏳ <b>{queue.length}</b> saved on this phone, waiting to send.</>}
+          {queue.length > 0 && !offline && <button onClick={() => void flush()} className="ml-2 underline">Send now</button>}
+        </div>
+      )}
       {banner && <div role="status" className={`rounded-2xl border-2 px-4 py-3 text-xl font-semibold ${bannerStyle}`}><span className="mr-2 text-2xl">{banner.icon}</span>{banner.text}</div>}
       {noGps && (
         <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 px-4 py-3 text-lg text-blue-900">

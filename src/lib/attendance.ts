@@ -141,6 +141,7 @@ export const FLAG_WORDS: Record<string, string> = {
   left_site: "Left the site (clocked out by the phone)",
   forgot_clock_out: "Forgot to clock out",
   long_gap: "More than 3 hours with no site check",
+  sent_late: "No signal: kept on the phone and sent later",
   no_work_photo: "No picture of the work",
   missed_check: "Did not answer an \"Are you on site?\" check",
 };
@@ -150,28 +151,39 @@ export function mapLink(lat: number | null | undefined, lng: number | null | und
 
 // ── worker (portal token) ──────────────────────────────────────────────────────────────────────────────────
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.rpc(fn, args);
-  if (error) throw new Error(error.message || "Something went wrong. Try again.");
+  let res;
+  try { res = await supabase.rpc(fn, args); } catch (e) { if (looksOffline(e)) throw new OfflineError(); throw e; }
+  const { data, error } = res;
+  if (error) { if (looksOffline(error) && !error.code) throw new OfflineError(); throw new Error(error.message || "Something went wrong. Try again."); }
   return data as T;
 }
 export const clockState = (token: string) => rpc<ClockState | null>("worker_clock_state", { p_token: token });
-export const clockIn = (token: string, projectId: string, fix: Fix | null, photoPath: string | null) =>
-  rpc<ClockResult>("worker_clock_in", { p_token: token, p_project: projectId, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: photoPath });
-export const clockCheck = (token: string, fix: Fix | null) =>
-  rpc<ClockResult>("worker_clock_check", { p_token: token, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null });
-export const clockAnswer = (token: string, fix: Fix | null) =>
-  rpc<ClockResult>("worker_clock_answer", { p_token: token, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null });
+// at: when it really happened (ISO), for something kept on the phone while there was no signal (migration 20260990000000)
+const atArg = (at?: string | null) => (at ? { p_at: at } : {});
+export const clockIn = (token: string, projectId: string, fix: Fix | null, photoPath: string | null, at?: string | null) =>
+  rpc<ClockResult>("worker_clock_in", { p_token: token, p_project: projectId, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: photoPath, ...atArg(at) });
+export const clockCheck = (token: string, fix: Fix | null, at?: string | null) =>
+  rpc<ClockResult>("worker_clock_check", { p_token: token, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, ...atArg(at) });
+export const clockAnswer = (token: string, fix: Fix | null, at?: string | null) =>
+  rpc<ClockResult>("worker_clock_answer", { p_token: token, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, ...atArg(at) });
 export const clockMissed = (token: string) => rpc<{ status: string }>("worker_clock_missed", { p_token: token });
-export const clockOut = (token: string, fix: Fix | null, photoPath: string | null) =>
-  rpc<ClockShift>("worker_clock_out", { p_token: token, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: photoPath });
+export const clockOut = (token: string, fix: Fix | null, photoPath: string | null, at?: string | null) =>
+  rpc<ClockShift>("worker_clock_out", { p_token: token, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: photoPath, ...atArg(at) });
 
 // The selfie goes through the worker-portal-files server function (a worker has no login to upload with). null = not saved.
 export async function uploadClockPhoto(token: string, dataUrl: string): Promise<string | null> {
   try {
     const { data, error } = await supabase.functions.invoke("worker-portal-files", { body: { action: "clock_photo", token, image: dataUrl } });
-    if (error) return null;
+    if (error) { if (looksOffline(error)) throw new OfflineError(); return null; }
     return typeof data?.path === "string" ? data.path : null;
-  } catch { return null; }
+  } catch (e) { if (e instanceof OfflineError || looksOffline(e)) throw new OfflineError(); return null; }
+}
+// No signal (as opposed to the server saying no): the phone keeps it and sends it later.
+export class OfflineError extends Error { constructor() { super("No signal."); this.name = "OfflineError"; } }
+export function looksOffline(e: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  const m = e instanceof Error ? `${e.name} ${e.message}` : typeof e === "object" && e ? JSON.stringify(e) : String(e);
+  return /failed to fetch|networkerror|network request failed|load failed|fetch ?error|internet connection|timed? ?out|FunctionsFetchError|FunctionsRelayError/i.test(m);
 }
 
 // Pictures of the work and voice notes: saved by the server function, then added to today's shift.
@@ -179,12 +191,12 @@ export async function uploadWorkFile(token: string, kind: "photo" | "voice", dat
   try {
     const body = kind === "photo" ? { action: "work_photo", token, image: dataUrl } : { action: "voice", token, audio: dataUrl };
     const { data, error } = await supabase.functions.invoke("worker-portal-files", { body });
-    if (error) return null;
+    if (error) { if (looksOffline(error)) throw new OfflineError(); return null; }
     return typeof data?.path === "string" ? data.path : null;
-  } catch { return null; }
+  } catch (e) { if (e instanceof OfflineError || looksOffline(e)) throw new OfflineError(); return null; }
 }
-export const addMedia = (token: string, kind: "photo" | "voice", path: string, seconds: number | null, fix: Fix | null) =>
-  rpc<{ shift_id: string; photos: number; voices: number }>("worker_clock_add_media", { p_token: token, p_kind: kind, p_path: path, p_seconds: seconds, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null });
+export const addMedia = (token: string, kind: "photo" | "voice", path: string, seconds: number | null, fix: Fix | null, at?: string | null) =>
+  rpc<{ shift_id: string; photos: number; voices: number }>("worker_clock_add_media", { p_token: token, p_kind: kind, p_path: path, p_seconds: seconds, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, ...atArg(at) });
 
 // ── office / supervisor ────────────────────────────────────────────────────────────────────────────────────
 export interface StaffShift {

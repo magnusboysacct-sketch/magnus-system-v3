@@ -13,6 +13,12 @@ import { buildWhatsAppUrl } from "../lib/portalShare";
 import { weakPinReason, isPinShape } from "../../supabase/functions/_shared/workerPortal";
 import AddToHomeScreenTip from "../components/AddToHomeScreenTip";
 import WorkerClock from "../components/WorkerClock";
+import { looksOffline } from "../lib/attendance";
+
+// The last home screen seen, so the portal (and the clock on it) still opens on a site with no signal.
+const HOME_KEY = "magnus_worker_home";
+function saveHome(h: PortalHome) { try { localStorage.setItem(HOME_KEY, JSON.stringify(h)); } catch { /* fine */ } }
+function loadHome(): PortalHome | null { try { const v = localStorage.getItem(HOME_KEY); return v ? JSON.parse(v) as PortalHome : null; } catch { return null; } }
 import { useWorkerPortalManifest } from "../hooks/useWorkerPortalManifest";
 import { logoIconDataUrl } from "../lib/workerPortalIcon";
 import { isStandalone, neverShowTip, shouldShowHomeTip, takeFreshLogin, tipDismissedForever, type ManifestIcon } from "../lib/workerPortalInstall";
@@ -103,7 +109,10 @@ export default function WorkerHomePage() {
   const [icons, setIcons] = useState<ManifestIcon[] | null>(null);       // the company logo as a home-screen icon
   const [touchIcon, setTouchIcon] = useState<string | null>(null);
 
-  const endSession = useCallback(() => { clearWorkerToken(); nav("/worker", { replace: true, state: { ended: true } }); }, [nav]);
+  // The service worker keeps the portal's page and files on the phone, so it opens with no signal (public/sw.js).
+  useEffect(() => { try { if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* fine */ }); } catch { /* fine */ } }, []);
+
+  const endSession = useCallback(() => { try { localStorage.removeItem(HOME_KEY); localStorage.removeItem("magnus_clock_state"); } catch { /* fine */ } clearWorkerToken(); nav("/worker", { replace: true, state: { ended: true } }); }, [nav]);
 
   const load = useCallback(async () => {
     const t = token.current;
@@ -113,6 +122,7 @@ export default function WorkerHomePage() {
       const h = await fetchHome(t);
       if (!h) { endSession(); return; }
       setHome(h);
+      if (!h.must_change_pin) saveHome(h);
       if (h.must_change_pin) return;
       const [p, a, n] = await Promise.all([fetchPayments(t, PAGE, 0), fetchAdvances(t), fetchNotices(t)]);
       setPayments(p); setHasMore(p.length === PAGE); setAdvances(a); setNotices(n);
@@ -128,7 +138,9 @@ export default function WorkerHomePage() {
       // after a fresh sign-in (not on every reload), unless "Don't show again" or already installed
       if (shouldShowHomeTip({ freshLogin: takeFreshLogin(), dismissedForever: tipDismissedForever(), standalone: isStandalone() })) setShowTip(true);
     } catch (e) {
-      setLoadErr(e instanceof Error && e.message ? e.message : "Could not load. Please try again.");
+      const cached = looksOffline(e) ? loadHome() : null;
+      if (cached) setHome((cur) => cur || cached);           // no signal: open with what was seen last time (the clock works offline)
+      else setLoadErr(e instanceof Error && e.message ? e.message : "Could not load. Please try again.");
     } finally {
       setLoading(false);
     }
