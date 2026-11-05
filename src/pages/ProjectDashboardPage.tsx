@@ -71,7 +71,17 @@ const TRADE_TYPES = [
   "Driver","Landscaping","Other"
 ];
 
-const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls"];export default function ProjectDashboardPage() {
+const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls"];
+
+// How far a task is: complete 100; otherwise its own percent; an active task with no percent counts 50; planned 0.
+function taskPercent(t:{status?:string|null;percent_complete?:number|string|null}):number{
+  if(t.status==="complete")return 100;
+  const p=Number(t.percent_complete)||0;
+  if(p>0)return Math.min(100,p);
+  return t.status==="active"?50:0;
+}
+
+export default function ProjectDashboardPage() {
   const { projectId } = useParams();
   const nav = useNavigate();
   const [project, setProject] = useState<any>(null);
@@ -460,7 +470,10 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       await supabase.from("project_tasks").insert(payload);
     }
     setSavingTask(false); setShowTaskForm(false);
-    await loadTasks();
+    const {data:fresh}=await supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,actual_quantity_completed,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true});
+    setTasks(fresh||[]);
+    const msIds=new Set([payload.milestone_id,editingTask?.milestone_id].filter(Boolean) as string[]);
+    for(const m of msIds) await syncMilestoneFromTasks(m,fresh||[]);
   }
 
   async function deleteTask(id: string) {
@@ -470,8 +483,33 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   }
 
   async function updateTaskStatus(id: string, status: string) {
-    await supabase.from("project_tasks").update({status,percent_complete:status==="complete"?100:status==="active"?50:0}).eq("id",id);
-    setTasks(prev=>prev.map(t=>t.id===id?{...t,status}:t));
+    const percent_complete=status==="complete"?100:status==="active"?50:0;
+    await supabase.from("project_tasks").update({status,percent_complete}).eq("id",id);
+    const next=tasks.map(t=>t.id===id?{...t,status,percent_complete}:t);
+    setTasks(next);
+    const msId=next.find(t=>t.id===id)?.milestone_id;
+    if(msId) await syncMilestoneFromTasks(msId,next);
+  }
+
+  // A milestone follows its tasks: its percent is the average of its tasks (complete 100, in progress 50 or the task's own
+  // percent, planned 0). When every task is complete the milestone is complete; when one has started it is active; a
+  // complete milestone whose task is reopened goes back to active. On hold is left alone.
+  async function syncMilestoneFromTasks(msId: string, taskList: {milestone_id?:string|null;status?:string|null;percent_complete?:number|string|null}[]) {
+    const ms=milestones.find(m=>m.id===msId);
+    const list=taskList.filter(t=>t.milestone_id===msId);
+    if(!ms||list.length===0)return;
+    const pct=Math.round(list.reduce((s,t)=>s+taskPercent(t),0)/list.length);
+    const allDone=list.every(t=>t.status==="complete");
+    const anyStarted=list.some(t=>t.status==="complete"||t.status==="active"||Number(t.percent_complete)>0);
+    const today=new Date().toISOString().slice(0,10);
+    const updates:Record<string,unknown>={percent_complete:pct};
+    if(ms.status!=="on_hold"){
+      if(allDone&&ms.status!=="complete"){updates.status="complete";updates.actual_end_date=today;if(!ms.actual_start_date)updates.actual_start_date=today;}
+      else if(!allDone&&ms.status==="complete"){updates.status="active";updates.actual_end_date=null;}
+      else if(!allDone&&anyStarted&&ms.status==="planned"){updates.status="active";updates.actual_start_date=ms.actual_start_date||today;}
+    }
+    await supabase.from("project_milestones").update(updates).eq("id",msId);
+    setMilestones(prev=>prev.map(m=>m.id===msId?{...m,...updates}:m));
   }if(loading)return(
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] flex items-center justify-center">
       <div className="flex items-center gap-2.5 text-xs text-slate-500 dark:text-slate-600">
@@ -495,7 +533,15 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const totalPlannedCost=milestones.reduce((s,m)=>s+(Number(m.planned_total_cost)||0),0);
   const totalActualCost=milestones.reduce((s,m)=>s+(Number(m.actual_total_cost)||0),0);
   const msComplete=milestones.filter(m=>m.status==="complete").length;
-  const overallProgress=milestones.length>0?Math.round((msComplete/milestones.length)*100):0;
+  // A milestone's progress: 100 when complete; otherwise from its tasks (average), else its own percent.
+  const msProgress=(m:{id:string;status?:string|null;percent_complete?:number|string|null})=>{
+    if(m.status==="complete")return 100;
+    const list=tasks.filter(t=>t.milestone_id===m.id);
+    if(list.length>0)return Math.round(list.reduce((s,t)=>s+taskPercent(t),0)/list.length);
+    return Math.round(Number(m.percent_complete)||0);
+  };
+  // Overall = the average of the milestones' progress (it used to count only fully complete milestones, so finishing tasks never moved it).
+  const overallProgress=milestones.length>0?Math.round(milestones.reduce((s,m)=>s+msProgress(m),0)/milestones.length):0;
 
   // Cash flow: money received from client vs money actually paid out
   const totalSpent=totalFieldPayments+totalPOCommitments+totalExpenses;
@@ -638,7 +684,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="text-sm font-bold text-slate-800 dark:text-slate-200">Overall Project Progress</div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-0.5">{msComplete} of {milestones.length} milestones complete</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-0.5">{msComplete} of {milestones.length} milestones complete · {tasks.filter(t=>t.status==="complete").length} of {tasks.length} tasks done</div>
                   </div>
                   <div className="text-2xl font-bold text-cyan-400">{overallProgress}%</div>
                 </div>
@@ -1056,8 +1102,16 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                       )}
 
                       {/* Milestone footer - status change */}
-                      <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/[0.04] flex items-center justify-between bg-slate-50 dark:bg-white/[0.01]">
-                        <span className="text-[10px] text-slate-500 dark:text-slate-600">{msTasks.length} tasks · {msTasksDone} complete</span>
+                      <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/[0.04] flex items-center justify-between gap-3 bg-slate-50 dark:bg-white/[0.01]">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-600 mb-1">
+                            <span>{msTasks.length} tasks · {msTasksDone} complete</span>
+                            <span className="font-bold text-cyan-500">{msProgress(ms)}%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 dark:bg-white/[0.06] rounded-full h-1.5">
+                            <div className="h-1.5 rounded-full bg-cyan-500 transition-all" style={{width:`${msProgress(ms)}%`}}/>
+                          </div>
+                        </div>
                         <select value={ms.status} onChange={e=>updateMSStatus(ms.id,e.target.value)}
                           className="text-[10px] bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.07] rounded px-2 py-1 text-slate-600 dark:text-slate-400 outline-none">
                           <option value="planned">Planned</option>
