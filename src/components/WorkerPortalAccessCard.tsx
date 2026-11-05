@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { buildWhatsAppUrl } from "../lib/portalShare";
-import { buildWorkerPortalMessage } from "../lib/workerPortalMessage";
+import { buildAppInviteMessage, buildWorkerPortalMessage } from "../lib/workerPortalMessage";
 import { fmtDay } from "../lib/workerPortalApi";
 
 interface PortalStatus {
@@ -21,7 +21,12 @@ async function callAdmin<T>(body: Record<string, unknown>): Promise<{ data: T | 
   return { data: null, error: message };
 }
 
-export default function WorkerPortalAccessCard({ workerId, workerName }: { workerId: string; workerName: string }) {
+// a text message (SMS) link; Android takes ?body=
+function smsUrl(phone: string | null | undefined, text: string): string {
+  return `sms:${String(phone || "").replace(/[^\d+]/g, "")}?body=${encodeURIComponent(text)}`;
+}
+
+export default function WorkerPortalAccessCard({ workerId, workerName, workerPhone }: { workerId: string; workerName: string; workerPhone?: string | null }) {
   const [status, setStatus] = useState<PortalStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -84,6 +89,13 @@ export default function WorkerPortalAccessCard({ workerId, workerName }: { worke
           <div className="flex flex-wrap gap-2">
             <button disabled={busy} onClick={() => void issue("reset")} className={`${btn} border-slate-300 dark:border-white/[0.15] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]`}>Reset PIN</button>
             {status.locked && <button disabled={busy} onClick={() => void simple({ action: "unlock" })} className={`${btn} border-amber-500 text-amber-600 hover:bg-amber-500/10`}>Unlock</button>}
+            {status.enabled && (() => {
+              const invite = buildAppInviteMessage({ workerName, employeeId: status.employee_id });
+              return (<>
+                <a href={buildWhatsAppUrl(workerPhone, invite)} target="_blank" rel="noopener noreferrer" className={`${btn} border-green-600 bg-green-600 text-white hover:bg-green-500`}>📲 Send app link (WhatsApp)</a>
+                <a href={smsUrl(workerPhone, invite)} className={`${btn} border-green-600 text-green-700 dark:text-green-400 hover:bg-green-500/10`}>📲 Send app link (text)</a>
+              </>);
+            })()}
             <button disabled={busy} onClick={() => void simple({ action: "set_enabled", enabled: !status.enabled })} className={`${btn} border-slate-300 dark:border-white/[0.15] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06]`}>{status.enabled ? "Switch off" : "Switch on"}</button>
           </div>
         </div>
@@ -101,6 +113,7 @@ export default function WorkerPortalAccessCard({ workerId, workerName }: { worke
             <pre className="whitespace-pre-wrap text-[11px] rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] p-2 text-slate-700 dark:text-slate-300">{message}</pre>
             <a href={buildWhatsAppUrl(issued.worker_phone, message)} target="_blank" rel="noopener noreferrer"
               className="block text-center rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-semibold py-2.5">{issued.worker_phone ? "Send by WhatsApp" : "Send by WhatsApp (choose the contact)"}</a>
+            <a href={smsUrl(issued.worker_phone, message)} className="block text-center rounded-lg border border-green-600 text-green-700 dark:text-green-400 text-sm font-semibold py-2.5">Send by text message</a>
             <button onClick={() => { void navigator.clipboard?.writeText(message).then(() => setCopied(true)).catch(() => undefined); }} className="w-full rounded-lg border border-slate-300 dark:border-white/[0.15] text-sm font-semibold py-2 text-slate-700 dark:text-slate-200">{copied ? "Copied" : "Copy message"}</button>
             <button onClick={() => setIssued(null)} className="w-full rounded-lg bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 text-sm font-semibold py-2">Done</button>
           </div>

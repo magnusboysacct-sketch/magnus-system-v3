@@ -1225,7 +1225,7 @@ export default function WorkersPage() {
                 ))}
               </div>
               {/* Worker portal access: director, admin, secretary */}
-              {canManageWorkerPortal(userRole) && <div className="pt-3"><WorkerPortalAccessCard workerId={selectedWorker.id} workerName={fullName(selectedWorker)} /></div>}
+              {canManageWorkerPortal(userRole) && <div className="pt-3"><WorkerPortalAccessCard workerId={selectedWorker.id} workerName={fullName(selectedWorker)} workerPhone={selectedWorker.phone} /></div>}
               {/* Print + Delete */}
               <div className="flex gap-2 pt-3 border-t border-slate-200 dark:border-white/[0.06] mt-2">
                 <button onClick={() => window.print()}
