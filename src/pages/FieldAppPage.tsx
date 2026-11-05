@@ -3,6 +3,7 @@
 import { resolveFileUrl, safeUploadName } from "../lib/storageRefs";
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { todayLocal } from "../lib/jamaica";
 import { resolveProjectPhotoUrls } from "../lib/privateFiles";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import {
@@ -127,7 +128,7 @@ export default function FieldAppPage() {
   const [toast, setToast] = useState<string|null>(null);
   const [companyId, setCompanyId] = useState<string>("");
   const { settings: company } = useCompanySettings();
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayLocal();
 
   useEffect(() => {
     if (company?.company_name) document.title = company.company_name + " Field";
@@ -525,7 +526,7 @@ Save the payment WITHOUT a signature? Press Cancel to go back and try again.`)) 
     const { error: insertError } = await supabase.from("field_payments").insert({
       company_id:companyId, project_id:projectId||null, worker_id:selWorker,
       worker_name:`${w?.first_name||""} ${w?.last_name||""}`.trim() || "Worker", worker_phone:w?.phone||null, worker_id_number:w?.id_number||null, worker_address:w?.address||null,
-      work_type:"Field payment", work_date:now.toISOString().slice(0,10), total_amount:parseFloat(amount), payment_type:"payment", payment_method:methodValue,
+      work_type:"Field payment", work_date:todayLocal(), total_amount:parseFloat(amount), payment_type:"payment", payment_method:methodValue,
       receipt_number:`FP-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${Date.now().toString().slice(-6)}`,
       // signed = the worker signed for it; without a signature it stays a draft for the office to complete (a draft has no receipt)
       status:sigUrl ? "signed" : "draft", signature_url:sigUrl, notes:notes||null, synced_to_finance:false,
@@ -634,7 +635,7 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
-  const [form, setForm] = useState({ description:"", amount:"", vendor:"", receiptNo:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
+  const [form, setForm] = useState({ description:"", amount:"", vendor:"", receiptNo:"", category:"Materials", date:todayLocal(), notes:"" });
   const [saving, setSaving] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState<string|null>(null);          // the stored path
   const [receiptShown, setReceiptShown] = useState<string|null>(null);      // a short-lived signed URL, for the preview only
@@ -704,7 +705,7 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
     });
     setSaving(false);
     if (insErr) { alert(insErr.message); return; }
-    setForm({ description:"", amount:"", vendor:"", receiptNo:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
+    setForm({ description:"", amount:"", vendor:"", receiptNo:"", category:"Materials", date:todayLocal(), notes:"" });
     setReceiptUrl(null); setReceiptShown(null);
     showToast("Expense logged!");
     const {data} = await supabase.from("expenses").select("*").eq("company_id",companyId).order("created_at",{ascending:false}).limit(10);

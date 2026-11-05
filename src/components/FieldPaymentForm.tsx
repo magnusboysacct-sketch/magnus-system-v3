@@ -3,6 +3,7 @@
 // Receipt generated from text data on demand — no image storage
 import React, { useRef, useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { todayLocal } from "../lib/jamaica";
 import { showPrintPreview } from "../lib/printPreview";
 import { generateReceiptHTML } from "../lib/receiptHtml";
 import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getAdvancesSoFar, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
@@ -361,7 +362,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         worker_address:form.worker_address.trim()||null,
         id_photo_url:idPhotoUrl||null,
         work_type:workLabel,
-        work_date:new Date().toISOString().split("T")[0],
+        work_date:todayLocal(),
         hours_worked:parseFloat(form.hours_worked)||null,
         days_worked:parseFloat(form.days_worked)||null,
         rate_per_hour:parseFloat(form.rate_per_hour)||null,
@@ -422,7 +423,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       await supabase.from("expenses").insert({
         company_id:companyId,project_id:form.project_id||null,
         description:`${form.payment_type==="advance"?"Advance":"Field Payment"} — ${form.worker_name} (${workLabel})`,
-        amount:amount,expense_date:new Date().toISOString().split("T")[0],status:"approved",
+        amount:amount,expense_date:todayLocal(),status:"approved",
       });
 
       setStep("done");
