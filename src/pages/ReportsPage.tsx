@@ -14,7 +14,8 @@ function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n);
 }
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+  // A plain date ("2026-11-05") is read as local time, so it does not show the day before in Jamaica.
+  return new Date(d.length===10 ? d+"T00:00:00" : d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 }
 function pct(a: number, b: number) {
   if(!b) return 0;
@@ -25,10 +26,10 @@ type DateRange = "week"|"month"|"quarter"|"year"|"all";
 type ReportTab = "overview"|"projects"|"workers"|"milestones";
 
 const DATE_RANGES: {key:DateRange;label:string}[] = [
-  {key:"week",label:"This Week"},
-  {key:"month",label:"This Month"},
-  {key:"quarter",label:"This Quarter"},
-  {key:"year",label:"This Year"},
+  {key:"week",label:"Last 7 Days"},
+  {key:"month",label:"Last 30 Days"},
+  {key:"quarter",label:"Last 3 Months"},
+  {key:"year",label:"Last 12 Months"},
   {key:"all",label:"All Time"},
 ];
 
@@ -39,14 +40,15 @@ function getCutoff(range: DateRange): string|null {
   else if(range==="month"){ now.setMonth(now.getMonth()-1); }
   else if(range==="quarter"){ now.setMonth(now.getMonth()-3); }
   else if(range==="year"){ now.setFullYear(now.getFullYear()-1); }
-  return now.toISOString();
+  // work_date is a plain date, so compare dates, not times
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 }
 
 export default function ReportsPage() {
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<ReportTab>("overview");
-  const [dateRange, setDateRange] = useState<DateRange>("month");
+  const [dateRange, setDateRange] = useState<DateRange>("all");
   const { projectId: urlProjectId } = useParams();   // /projects/:projectId/reports shows that project only; /reports has its own project filter
   const [projectFilter, setProjectFilter] = useState<string>(urlProjectId || "all");
   const [payments, setPayments] = useState<any[]>([]);
@@ -67,8 +69,11 @@ export default function ReportsPage() {
     if(!companyId) return;
     setLoading(true);
     const cutoff = getCutoff(dateRange);
-    let q = supabase.from("field_payments").select("*").eq("company_id",companyId).order("created_at",{ascending:false});
-    if(cutoff) q = q.gte("created_at",cutoff);
+    // Dated by the day of the work (work_date), not the day the record was typed in.
+    // Cancelled payments were never paid out, so they are left out of every total.
+    let q = supabase.from("field_payments").select("*").eq("company_id",companyId).neq("status","cancelled")
+      .order("work_date",{ascending:false}).order("created_at",{ascending:false});
+    if(cutoff) q = q.gte("work_date",cutoff);
     if(projectFilter!=="all") q = q.eq("project_id",projectFilter);
     // projects has no `budget` column (same unverified-assumption bug just
     // fixed on the Dashboard) — this app's real budget concept is
@@ -111,12 +116,13 @@ export default function ReportsPage() {
   const uniqueWorkers = new Set(payments.map(p=>p.worker_ref)).size;
 
   // By project
+  // Grouped by the project itself (id), so a renamed project or two projects with the same name stay correct.
   const byProject: Record<string,{name:string;total:number;advances:number;count:number;budget:number}> = {};
   payments.forEach(p=>{
-    const key = p.project_name||"No Project";
+    const key = p.project_id||"none";
     if(!byProject[key]) {
       const proj = projects.find(r=>r.id===p.project_id);
-      byProject[key] = {name:key,total:0,advances:0,count:0,budget:proj?.budget||0};
+      byProject[key] = {name:proj?.name||p.project_name||"No Project",total:0,advances:0,count:0,budget:proj?.budget||0};
     }
     byProject[key].total += p.total_amount||0;
     byProject[key].count++;
@@ -141,10 +147,12 @@ export default function ReportsPage() {
   const byMilestone: Record<string,{name:string;project:string;total:number;planned:number;count:number}> = {};
   payments.forEach(p=>{
     if(!p.milestone_name) return;
-    const key = p.milestone_name;
+    // Same milestone name in two projects (e.g. "Foundation") must not be added together.
+    const key = `${p.project_id||""}|${p.milestone_name}`;
     if(!byMilestone[key]) {
-      const ms = milestones.find(m=>m.milestone_name===p.milestone_name);
-      byMilestone[key] = {name:key,project:p.project_name||"",total:0,planned:ms?.planned_cost||0,count:0};
+      const ms = milestones.find(m=>m.project_id===p.project_id && m.milestone_name===p.milestone_name);
+      const proj = projects.find(r=>r.id===p.project_id);
+      byMilestone[key] = {name:p.milestone_name,project:proj?.name||p.project_name||"",total:0,planned:ms?.planned_cost||0,count:0};
     }
     byMilestone[key].total += p.total_amount||0;
     byMilestone[key].count++;
@@ -155,8 +163,8 @@ export default function ReportsPage() {
   const byTask: Record<string,{name:string;milestone:string;total:number;count:number}> = {};
   payments.forEach(p=>{
     if(!p.task_name) return;
-    const key = p.task_name;
-    if(!byTask[key]) byTask[key] = {name:key,milestone:p.milestone_name||"",total:0,count:0};
+    const key = `${p.project_id||""}|${p.milestone_name||""}|${p.task_name}`;
+    if(!byTask[key]) byTask[key] = {name:p.task_name,milestone:p.milestone_name||"",total:0,count:0};
     byTask[key].total += p.total_amount||0;
     byTask[key].count++;
   });
@@ -170,7 +178,7 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Reports</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Field payment analytics across all projects</p>
+          <p className="text-xs text-slate-500 mt-0.5">{urlProjectId ? `Field payments for ${projects.find(p=>p.id===urlProjectId)?.name||"this project"}` : "Field payments (workers paid on site) across all projects"}</p>
         </div>
         <button onClick={loadData} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 text-xs transition">
           <RefreshCw size={12}/> Refresh
@@ -259,7 +267,7 @@ export default function ReportsPage() {
                         <div>
                           <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">{p.worker_name}</div>
                           <div className="text-[10px] text-slate-500 dark:text-slate-600">{p.project_name||"No project"}{p.milestone_name?` · ${p.milestone_name}`:""}</div>
-                          <div className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(p.created_at)}</div>
+                          <div className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(p.work_date||p.created_at)}</div>
                         </div>
                         <div className="text-right">
                           <div className={`text-sm font-bold ${ptColor}`}>{fmtJMD(p.total_amount)}</div>
@@ -278,8 +286,8 @@ export default function ReportsPage() {
           {tab==="projects"&&(
             <div className="space-y-3">
               {projectRows.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No project data in selected period</div>}
-              {projectRows.map(r=>(
-                <div key={r.name} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+              {projectRows.map((r,i)=>(
+                <div key={`${i}-${r.name}`} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{r.name}</div>
@@ -293,8 +301,7 @@ export default function ReportsPage() {
                   {r.budget>0&&(
                     <div>
                       <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-600 mb-1">
-                        <span>Spent: {pct(r.total,r.budget)}%</span>
-                        <span>{fmtJMD(r.budget-r.total)} remaining</span>
+                        <span>Paid to workers: {pct(r.total,r.budget)}% of the project budget</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
                         <div className={`h-full rounded-full ${pct(r.total,r.budget)>90?"bg-red-500":pct(r.total,r.budget)>70?"bg-amber-500":"bg-emerald-500"}`}
@@ -319,8 +326,8 @@ export default function ReportsPage() {
               </div>
               {workerRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No worker data in selected period</div>}
               <div className="divide-y divide-white/[0.04]">
-                {workerRows.map(r=>(
-                  <div key={r.name} className="px-4 py-3">
+                {workerRows.map((r,i)=>(
+                  <div key={`${i}-${r.name}`} className="px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{r.name}</div>
                       <div className="text-sm font-bold text-emerald-400">{fmtJMD(r.total)}</div>
@@ -355,8 +362,8 @@ export default function ReportsPage() {
                 </div>
                 {milestoneRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No milestone data — select project/milestone when creating payments</div>}
                 <div className="divide-y divide-white/[0.04]">
-                  {milestoneRows.map(r=>(
-                    <div key={r.name} className="px-4 py-3">
+                  {milestoneRows.map((r,i)=>(
+                    <div key={`${i}-${r.name}`} className="px-4 py-3">
                       <div className="flex items-center justify-between mb-1">
                         <div>
                           <div className="text-xs font-bold text-slate-800 dark:text-slate-200">🚩 {r.name}</div>
@@ -373,7 +380,7 @@ export default function ReportsPage() {
                             <div className={`h-full rounded-full ${pct(r.total,r.planned)>100?"bg-red-500":pct(r.total,r.planned)>80?"bg-amber-500":"bg-emerald-500"}`}
                               style={{width:`${Math.min(100,pct(r.total,r.planned))}%`}}/>
                           </div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-600 mt-0.5">{pct(r.total,r.planned)}% of planned budget used</div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-600 mt-0.5">{pct(r.total,r.planned)}% of the milestone's planned cost</div>
                         </div>
                       )}
                     </div>
@@ -387,8 +394,8 @@ export default function ReportsPage() {
                 </div>
                 {taskRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No task data in selected period</div>}
                 <div className="divide-y divide-white/[0.04]">
-                  {taskRows.map(r=>(
-                    <div key={r.name} className="flex items-center justify-between px-4 py-3">
+                  {taskRows.map((r,i)=>(
+                    <div key={`${i}-${r.name}`} className="flex items-center justify-between px-4 py-3">
                       <div>
                         <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">✅ {r.name}</div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-600">{r.milestone||"No milestone"} · {r.count} payments</div>
