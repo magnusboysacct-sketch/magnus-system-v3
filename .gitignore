@@ -54,3 +54,9 @@ Thumbs.db
 >>>>>>> Stashed changes
 .vercel
 .env*.local
+
+# --- Android app signing key: never in the repository (it lives in GitHub secrets) ---
+*.jks
+*.keystore
+ANDROID_KEYSTORE_*.txt
+mobile-app.tgz

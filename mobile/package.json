@@ -1,0 +1,16 @@
+{
+  "name": "magnus-worker-app",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.3.1",
+    "@capacitor/android": "^7.6.10",
+    "@capacitor/cli": "^7.6.10",
+    "@capacitor/core": "^7.6.10",
+    "@capacitor/local-notifications": "^7.0.7"
+  },
+  "description": "The Magnus Workers Android app: the worker portal (app.magnusboys.com/worker) in a phone app, with clock-in site checks that keep running with the phone locked. Built by .github/workflows/android-worker-app.yml.",
+  "scripts": {
+    "sync": "cap sync android"
+  }
+}

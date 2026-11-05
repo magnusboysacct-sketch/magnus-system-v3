@@ -14,6 +14,7 @@ import { weakPinReason, isPinShape } from "../../supabase/functions/_shared/work
 import AddToHomeScreenTip from "../components/AddToHomeScreenTip";
 import WorkerClock from "../components/WorkerClock";
 import { looksOffline } from "../lib/attendance";
+import { isNativeApp } from "../lib/nativeApp";
 
 // The last home screen seen, so the portal (and the clock on it) still opens on a site with no signal.
 const HOME_KEY = "magnus_worker_home";
@@ -110,7 +111,8 @@ export default function WorkerHomePage() {
   const [touchIcon, setTouchIcon] = useState<string | null>(null);
 
   // The service worker keeps the portal's page and files on the phone, so it opens with no signal (public/sw.js).
-  useEffect(() => { try { if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* fine */ }); } catch { /* fine */ } }, []);
+  // Not inside the Android app: there a service worker would stop the app's own powers loading, and the app has its own "no signal" page.
+  useEffect(() => { try { if (!isNativeApp() && "serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* fine */ }); } catch { /* fine */ } }, []);
 
   const endSession = useCallback(() => { try { localStorage.removeItem(HOME_KEY); localStorage.removeItem("magnus_clock_state"); } catch { /* fine */ } clearWorkerToken(); nav("/worker", { replace: true, state: { ended: true } }); }, [nav]);
 

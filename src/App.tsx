@@ -29,6 +29,7 @@ import ResetPasswordPage      from "./pages/ResetPasswordPage";
 import AuthConfirmPage        from "./pages/AuthConfirmPage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
 import WorkerLoginPage        from "./pages/WorkerLoginPage";
+import GetAppPage             from "./pages/GetAppPage";
 import WorkerHomePage         from "./pages/WorkerHomePage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
 import FieldAppPage           from "./pages/FieldAppPage";
@@ -308,6 +309,7 @@ export default function App() {
             {/* Standalone portals */}
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />
             {/* The worker portal: workers sign in with their worker number + PIN (no Supabase login, see lib/workerPortalApi.ts). The old /worker/portal page needed a staff-style login that cannot exist. */}
+            <Route path="/get-app"                    element={<GetAppPage />} />{/* how to install the Magnus Workers Android app (mobile/) */}
             <Route path="/worker"                     element={<FeatureGate feature="worker_portal"><WorkerLoginPage /></FeatureGate>} />
             <Route path="/worker/home"                element={<FeatureGate feature="worker_portal"><WorkerHomePage /></FeatureGate>} />
             <Route path="/worker/portal"              element={<Navigate to="/worker" replace />} />

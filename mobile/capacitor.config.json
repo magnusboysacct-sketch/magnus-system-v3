@@ -1,0 +1,14 @@
+{
+  "appId": "com.magnusboys.workers",
+  "appName": "Magnus Workers",
+  "webDir": "www",
+  "server": {
+    "url": "https://app.magnusboys.com/worker",
+    "cleartext": false,
+    "allowNavigation": ["app.magnusboys.com"],
+    "errorPath": "index.html"
+  },
+  "android": {
+    "useLegacyBridge": true
+  }
+}

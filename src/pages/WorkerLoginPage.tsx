@@ -6,6 +6,7 @@ import { clearWorkerToken, fetchHome, getWorkerToken, workerLogin } from "../lib
 import { isPinShape } from "../../supabase/functions/_shared/workerPortal";
 import { useWorkerPortalManifest } from "../hooks/useWorkerPortalManifest";
 import { markFreshLogin } from "../lib/workerPortalInstall";
+import { isNativeApp } from "../lib/nativeApp";
 
 export default function WorkerLoginPage() {
   useForceLightPage();
@@ -76,6 +77,9 @@ export default function WorkerLoginPage() {
         </form>
         <p className="mt-6 text-center text-base text-slate-500">Forgot your PIN? Ask the office to reset it.</p>
         <p className="mt-3 text-center text-base text-slate-500">You&apos;ll stay signed in on this phone. Sign out if you use a shared phone.</p>
+        {/android/i.test(navigator.userAgent) && !isNativeApp() && (
+          <a href="/get-app" className="mt-4 block w-full rounded-xl border-2 border-green-600 bg-green-50 px-4 py-3 text-center text-lg font-semibold text-green-800">📲 Get the Android app (clock works with the phone locked)</a>
+        )}
       </div>
     </div>
   );

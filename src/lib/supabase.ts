@@ -36,3 +36,6 @@ console.log("[Supabase Config]", {
 });
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// for the worker phone app's background site checks (lib/nativeApp.ts), which call the database through the phone's own HTTP
+export const SUPABASE_URL: string = supabaseUrl;
+export const SUPABASE_ANON_KEY: string = supabaseAnonKey;

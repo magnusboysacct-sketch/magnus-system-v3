@@ -8,6 +8,10 @@ import {
   OfflineError, looksOffline, type ClockResult, type ClockShift, type ClockState, type Fix,
 } from "../lib/attendance";
 import { flushQueue, queueAdd, queueAll, tokTag, type QItem } from "../lib/clockQueue";
+import { cancelAsk, isNativeApp, nativeRpc, openAppSettings, scheduleAsk, startSiteWatch, type NativeFix } from "../lib/nativeApp";
+
+const NATIVE = isNativeApp();                  // inside the "Magnus Workers" Android app: checks keep running with the phone locked
+const NATIVE_SEND_EVERY_MS = 3 * 60 * 1000;     // the app sends a site check at most every 3 minutes (when the phone moves)
 
 // The last clock screen seen, so the clock still opens with no signal (step 4).
 const STATE_KEY = "magnus_clock_state";
@@ -123,7 +127,7 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
 
   // the 10-minute site checks while this page is open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || NATIVE) return;               // the app watches the location itself (below)
     let stop = false;
     const run = async () => {
       if (document.visibilityState !== "visible") return;
@@ -141,6 +145,30 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
     return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [isOpen, token, handleCheck, canSendNow, keep]);
 
+  // The Android app: watch the location also with the phone locked, and send a site check at most every 3 minutes.
+  const [watchErr, setWatchErr] = useState<string | null>(null);
+  const lastSent = useRef(0);
+  useEffect(() => {
+    if (!NATIVE || !isOpen) { if (NATIVE) void cancelAsk(); return; }
+    void scheduleAsk(askAt.current);
+    let stopWatch: (() => void) | null = null, gone = false;
+    const send = async (f: NativeFix) => {
+      const n = Date.now();
+      if (n - lastSent.current < NATIVE_SEND_EVERY_MS) return;
+      lastSent.current = n;
+      const fix: Fix = { lat: f.lat, lng: f.lng, accuracy: f.accuracy };
+      const at = new Date(f.time || n).toISOString();
+      if (queueRef.current.length) { await keep({ kind: "check", at, fix }, true); void flush(); return; }
+      try { handleCheck(await nativeRpc<ClockResult>("worker_clock_check", { p_token: token, p_lat: fix.lat, p_lng: fix.lng, p_accuracy: fix.accuracy })); setWatchErr(null); }
+      catch (e) { if (e instanceof Error && e.message === "offline") await keep({ kind: "check", at, fix }, true); }
+    };
+    void startSiteWatch("You are clocked in", `${open?.project || "Site"}: the phone checks you are on the site.`, (f) => { void send(f); },
+      (code) => setWatchErr(code === "NOT_AUTHORIZED" ? "perm" : "gps"))
+      .then((stop) => { if (gone) stop?.(); else stopWatch = stop; });
+    return () => { gone = true; stopWatch?.(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, token]);
+
   // "Are you still on site?": time to ask, and no answer in 15 minutes
   useEffect(() => {
     if (!isOpen) { setAskSince(null); return; }
@@ -150,7 +178,7 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
       if (askSince == null && n >= askAt.current) {
         setAskSince(n); buzz(); speak("Are you still on the site? Tap the yellow button.");
       } else if (askSince != null && n - askSince >= ANSWER_MS) {
-        setAskSince(null); askAt.current = nextAsk();
+        setAskSince(null); askAt.current = nextAsk(); if (NATIVE) void scheduleAsk(askAt.current);
         void clockMissed(token).catch((e) => { if (isOffline(e)) void keep({ kind: "missed", at: new Date().toISOString() }, true); });
         setBanner({ kind: "warn", icon: "❓", text: "You did not answer \"Are you on site?\". The office will see this." });
       } else if (askSince != null && (n - askSince) % (5 * 60 * 1000) < 30000) {
@@ -161,7 +189,7 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
   }, [isOpen, askSince, token, keep]);
 
   async function answerAsk() {
-    setAskSince(null); askAt.current = nextAsk();
+    setAskSince(null); askAt.current = nextAsk(); if (NATIVE) void scheduleAsk(askAt.current);
     setBusy("Checking where you are…");
     const at = new Date().toISOString();
     let fix: Fix | null = null;
@@ -398,7 +426,15 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
           <div className="mt-1 text-5xl font-extrabold text-green-800 tabular-nums">{hoursWords(workedMin)}</div>
           <div className="text-lg text-green-900">since {timeWords(open.clock_in_at)}</div>
         </div>
-        <p className="text-base text-slate-600">📱 Keep this page open while you work. The phone checks that you are on the site every 10 minutes. If you leave the site, you are clocked out. Sometimes the phone buzzes and asks "Are you still on site?": tap the yellow button.</p>
+        {NATIVE
+          ? <p className="text-base text-slate-600">🔒 You can lock the phone. While you are clocked in, the phone checks that you are on the site. If you leave the site, you are clocked out. Sometimes the phone asks "Are you still on the site?": open the app and tap the yellow button.</p>
+          : <p className="text-base text-slate-600">📱 Keep this page open while you work. The phone checks that you are on the site every 10 minutes. If you leave the site, you are clocked out. Sometimes the phone buzzes and asks "Are you still on site?": tap the yellow button.</p>}
+        {NATIVE && watchErr && (
+          <div className="rounded-2xl border-2 border-red-300 bg-red-50 px-4 py-3 text-lg text-red-900">
+            📍 {watchErr === "perm" ? "The app is not allowed to use your location. Allow it (\"Allow all the time\" or \"While using the app\")." : "Turn on Location (GPS) on the phone."}
+            {watchErr === "perm" && <button onClick={openAppSettings} className="mt-2 block w-full min-h-[52px] rounded-xl bg-red-600 text-white text-lg font-bold">Open settings</button>}
+          </div>
+        )}
         {!outStep ? (<>
           <div className="grid grid-cols-2 gap-3">
             <button onClick={pressWorkPhoto} disabled={!!busy} className="min-h-[90px] rounded-2xl border-2 border-blue-300 bg-blue-50 text-blue-900 disabled:opacity-50">

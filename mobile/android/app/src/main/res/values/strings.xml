@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Magnus Workers</string>
+    <string name="title_activity_main">Magnus Workers</string>
+    <string name="package_name">com.magnusboys.workers</string>
+    <string name="custom_url_scheme">com.magnusboys.workers</string>
+    <!-- the notification shown while clocked in (it keeps the site check running with the phone locked) -->
+    <string name="capacitor_background_geolocation_notification_channel_name">Clocked in</string>
+    <string name="capacitor_background_geolocation_notification_color">#15315A</string>
+</resources>

@@ -1,0 +1,7 @@
+# The Android app build runs on Linux (GitHub): these must keep Linux line endings / stay binary
+mobile/android/gradlew text eol=lf
+*.sh text eol=lf
+*.jar binary
+*.png binary
+*.apk binary
+*.jks binary
