@@ -438,6 +438,14 @@ export default function RatesPage() {
     return()=>{alive=false;};
   };
 
+  // The AI Price Lookup saved a price: show it straight away.
+  useEffect(()=>{
+    const onChanged=()=>{ reload(); };
+    window.addEventListener("magnus:rates-changed",onChanged);
+    return()=>window.removeEventListener("magnus:rates-changed",onChanged);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
   useEffect(()=>{
     if(!isModalOpen||!autoCode) return;
     setFCode(nextCodeFor(fCategory||"Uncategorized",fType||"Other",items));

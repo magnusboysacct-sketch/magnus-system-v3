@@ -1,5 +1,8 @@
 ﻿// src/components/AIPriceLookup.tsx — Floating AI price assistant for Rate Library
 // Units loaded from master_units table — no hardcoding
+// Saving updates the EXISTING Rate Library item when there is one (it used to always create a new item, making duplicates):
+// matching items are listed while typing; an exact name + unit match is picked by itself. Updating adds an "ai" price to the
+// item's price history (the Rate Library shows the latest price), so earlier prices are kept.
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { magnusAI } from "../lib/magnusAI";
@@ -31,6 +34,10 @@ const FALLBACK_UNITS = [
   "bundle","pack","board","day","hr","week","job","load","trip"
 ];
 
+interface LibraryItem { id: string; item_name: string; unit: string | null; current_rate: number | null }
+const normName = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const today = () => new Date().toISOString().slice(0, 10);
+
 export default function AIPriceLookup() {
   const [open, setOpen] = useState(false);
   const [item, setItem] = useState("");
@@ -42,6 +49,29 @@ export default function AIPriceLookup() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string|null>(null);
   const [units, setUnits] = useState<string[]>(FALLBACK_UNITS);
+  // Rate Library items like the one typed, and the one being priced (null = a new item).
+  const [matches, setMatches] = useState<LibraryItem[]>([]);
+  const [chosen, setChosen] = useState<LibraryItem | null>(null);
+
+  useEffect(() => {
+    const term = item.trim();
+    if (chosen || term.length < 3) return;
+    let alive = true;
+    const t = window.setTimeout(async () => {
+      const words = normName(term).split(" ").filter((w) => w.length >= 2).slice(0, 3);
+      let q = supabase.from("v_cost_items_current").select("id,item_name,unit,current_rate");
+      for (const w of words) q = q.ilike("item_name", `%${w}%`);
+      const { data } = await q.order("item_name").limit(6);
+      if (alive) setMatches(((data || []) as LibraryItem[]).map((m) => ({ ...m, current_rate: m.current_rate == null ? null : Number(m.current_rate) })));
+    }, 400);
+    return () => { alive = false; window.clearTimeout(t); };
+  }, [item, chosen]);
+
+  function choose(m: LibraryItem | null) {
+    setChosen(m);
+    setSaved(false); setSaveError(null);
+    if (m) { setItem(m.item_name); if (m.unit) setUnit(m.unit); }
+  }
 
   // Load units from master_units table
   useEffect(() => {
@@ -60,15 +90,48 @@ export default function AIPriceLookup() {
   async function lookup() {
     if (!item.trim()) return;
     setLoading(true); setResult(null); setSaved(false); setSaveError(null);
+    // The same name and unit already in the Rate Library: price that item.
+    if (!chosen) {
+      const exact = matches.find((m) => normName(m.item_name) === normName(item) && (m.unit || "") === unit);
+      if (exact) setChosen(exact);
+    }
     const r = await askAI(item, unit);
     if (r) { setResult(r); setHistory(h=>[{item,unit,jmd:r.jmd,usd:r.usd},...h.slice(0,9)]); }
     setLoading(false);
   }
 
+  // Adds today's AI price to an item's price history (one AI price per item per day: a second lookup the same day replaces it).
+  async function addAiPrice(costItemId: string, jmd: number, notes: string) {
+    const { error } = await supabase.from("cost_item_rates").upsert({
+      cost_item_id: costItemId, rate: jmd, currency: "JMD", effective_date: today(), source: "ai", note: notes || null,
+      created_at: new Date().toISOString(),
+    }, { onConflict: "cost_item_id,effective_date,source" });
+    if (error) throw error;
+  }
+
   async function saveToLibrary() {
     if (!result) return;
-    setSaving(true);
+    setSaving(true); setSaveError(null);
     try {
+      if (chosen) {
+        await addAiPrice(chosen.id, result.jmd, result.notes);
+        setChosen({ ...chosen, current_rate: result.jmd });
+        setSaved(true);
+        window.dispatchEvent(new Event("magnus:rates-changed"));
+        setSaving(false);
+        return;
+      }
+      // A new item - unless the same name and unit is already there (then that one gets the price).
+      const { data: same } = await supabase.from("v_cost_items_current").select("id,item_name,unit,current_rate").ilike("item_name", item.trim()).limit(5);
+      const dup = ((same || []) as LibraryItem[]).find((m) => normName(m.item_name) === normName(item) && (m.unit || "") === unit);
+      if (dup) {
+        await addAiPrice(dup.id, result.jmd, result.notes);
+        setChosen({ ...dup, current_rate: result.jmd });
+        setSaved(true);
+        window.dispatchEvent(new Event("magnus:rates-changed"));
+        setSaving(false);
+        return;
+      }
       const {data:{user}} = await supabase.auth.getUser();
       if (!user) { setSaving(false); return; }
       const {data:p} = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
@@ -80,13 +143,10 @@ export default function AIPriceLookup() {
         item_type: "Material", category: "AI Suggested",
       }).select().single();
       if (e1) throw e1;
-      const {error:e2} = await supabase.from("cost_item_rates").insert({
-        cost_item_id: ci.id, rate: result.jmd, currency: "JMD",
-        effective_date: new Date().toISOString().slice(0,10),
-        source: "ai", note: result.notes,
-      });
-      if (e2) throw e2;
+      await addAiPrice(ci.id, result.jmd, result.notes);
+      setChosen({ id: ci.id, item_name: item, unit, current_rate: result.jmd });
       setSaved(true);
+      window.dispatchEvent(new Event("magnus:rates-changed"));
     } catch(e:any) {
       console.error("Save error:", e);
       setSaveError(e?.message || String(e));
@@ -129,7 +189,7 @@ export default function AIPriceLookup() {
       <div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
         {/* Input */}
         <div style={{display:"flex",gap:8}}>
-          <input value={item} onChange={e=>setItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&lookup()}
+          <input value={item} onChange={e=>{ setItem(e.target.value); if (chosen) setChosen(null); setSaved(false); }} onKeyDown={e=>e.key==="Enter"&&lookup()}
             placeholder="e.g. Portland Cement 50kg"
             style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"9px 12px",fontSize:13,color:"#f1f5f9",outline:"none"}}/>
           <select value={unit} onChange={e=>setUnit(e.target.value)}
@@ -137,6 +197,26 @@ export default function AIPriceLookup() {
             {units.map(u=><option key={u} value={u}>{u}</option>)}
           </select>
         </div>
+
+        {chosen ? (
+          <div style={{fontSize:11,color:"#a78bfa",background:"rgba(124,58,237,0.1)",border:"1px solid rgba(124,58,237,0.25)",borderRadius:8,padding:"6px 10px",display:"flex",justifyContent:"space-between",gap:8}}>
+            <span>Updating your Rate Library item: <b>{chosen.item_name}</b>{chosen.unit?` / ${chosen.unit}`:""}{chosen.current_rate!=null?` (now ${fmt(chosen.current_rate)})`:""}</span>
+            <button onClick={()=>choose(null)} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:11,textDecoration:"underline"}}>new item</button>
+          </div>
+        ) : matches.length > 0 && item.trim().length >= 3 ? (
+          <div>
+            <div style={{fontSize:10,color:"#475569",fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:4}}>Already in your Rate Library - tap to update it</div>
+            <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:130,overflowY:"auto"}}>
+              {matches.map(m=>(
+                <button key={m.id} onClick={()=>choose(m)}
+                  style={{display:"flex",justifyContent:"space-between",gap:8,padding:"5px 9px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,cursor:"pointer",textAlign:"left"}}>
+                  <span style={{fontSize:11,color:"#cbd5e1"}}>{m.item_name}{m.unit?` / ${m.unit}`:""}</span>
+                  <span style={{fontSize:11,color:"#22c55e",fontWeight:600,whiteSpace:"nowrap"}}>{m.current_rate!=null?fmt(m.current_rate):"no price"}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <button onClick={lookup} disabled={loading||!item.trim()}
           style={{width:"100%",padding:"10px 0",background:loading?"rgba(124,58,237,0.4)":"#7c3aed",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.2s"}}>
@@ -164,7 +244,7 @@ export default function AIPriceLookup() {
             )}
             <button onClick={saveToLibrary} disabled={saving||saved}
               style={{width:"100%",padding:"8px 0",background:saved?"rgba(34,197,94,0.2)":saving?"rgba(255,255,255,0.05)":"rgba(124,58,237,0.2)",border:`1px solid ${saved?"rgba(34,197,94,0.3)":"rgba(124,58,237,0.3)"}`,borderRadius:8,color:saved?"#22c55e":"#a78bfa",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-              {saved?"✓ Saved to Rate Library!":saving?"Saving…":"+ Save to Rate Library"}
+              {saved?(chosen?`✓ Price updated: ${chosen.item_name}`:"✓ Saved to Rate Library!"):saving?"Saving…":chosen?`Update price of ${chosen.item_name}`:"+ Save as a new item"}
             </button>
           </div>
         )}
