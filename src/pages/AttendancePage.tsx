@@ -6,6 +6,7 @@ import { todayLocal } from "../lib/jamaica";
 import {
   FLAG_WORDS, distanceWords, fetchChecks, fetchShiftsForDay, getFix, hoursWords, mapLink, setRadius, setSite, shrinkPhoto, signedPhotoUrls,
   staffClockIn, staffClockOut, timeWords, uploadStaffClockPhoto, type StaffShift,
+  fetchDiary, fetchMediaForShifts, staffAddWorkPhoto, stampPhoto, stampWords, type MediaRow,
 } from "../lib/attendance";
 
 type Proj = { id: string; name: string; status: string | null; site_lat: number | null; site_lng: number | null; site_radius_m: number | null };
@@ -35,6 +36,10 @@ export default function AttendancePage() {
   const [modal, setModal] = useState<"crew" | "site" | null>(null);
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  const [view, setView] = useState<"day" | "diary">("day");
+  const [media, setMedia] = useState<MediaRow[]>([]);
+  const [photoFor, setPhotoFor] = useState<StaffShift | null>(null);     // a supervisor adding a work picture for this person
+  const workRef = useRef<HTMLInputElement>(null);
   const canAct = ACT_ROLES.includes(role);
 
   useEffect(() => {
@@ -69,9 +74,10 @@ export default function AttendancePage() {
     (async () => {
       try {
         const rows = await fetchShiftsForDay(companyId, day, projectId);
-        const urls = await signedPhotoUrls(rows.flatMap((r) => [r.in_photo_path || "", r.out_photo_path || ""]));
+        const med = await fetchMediaForShifts(rows.map((r) => r.id)).catch(() => [] as MediaRow[]);
+        const urls = await signedPhotoUrls([...rows.flatMap((r) => [r.in_photo_path || "", r.out_photo_path || ""]), ...med.map((m) => m.path)]);
         if (!alive) return;
-        setShifts(rows); setPhotos(urls); setLoading(false);
+        setShifts(rows); setMedia(med); setPhotos(urls); setLoading(false);
       } catch (e) {
         if (!alive) return;
         setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); setLoading(false);
@@ -87,6 +93,16 @@ export default function AttendancePage() {
     if (openRow === id) { setOpenRow(null); return; }
     setOpenRow(id);
     if (!checks[id]) { const c = await fetchChecks(id).catch(() => []); setChecks((m) => ({ ...m, [id]: c })); }
+  }
+
+  async function saveStaffWorkPhoto(file: File) {
+    const s = photoFor; setPhotoFor(null);
+    if (!s || !companyId) return;
+    try {
+      const data = await stampPhoto(file, [[wname(s.workers), s.projects?.name].filter(Boolean).join(" · "), stampWords()]);
+      await staffAddWorkPhoto(companyId, s.worker_id, data, await getFix(10000));
+      setMsg({ ok: true, text: `Picture added for ${wname(s.workers)}.` }); reload();
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save the picture." }); }
   }
 
   async function clockOutRow(s: StaffShift) {
@@ -122,6 +138,14 @@ export default function AttendancePage() {
         </div>
       </div>
 
+      <input ref={workRef} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; if (f) void saveStaffWorkPhoto(f); else setPhotoFor(null); }} />
+      <div className="flex gap-2">
+        {([["day", "⏰ Who is on site"], ["diary", "📷 Photo diary"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)} className={`${btn} ${view === k ? "bg-cyan-600 text-white" : "border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300"}`}>{l}</button>
+        ))}
+      </div>
+      {view === "diary" && companyId ? <DiaryView companyId={companyId} projects={projects} /> : (<>
       <div className="flex flex-wrap gap-2">
         <input type="date" value={day} max={todayLocal()} onChange={(e) => e.target.value && setDay(e.target.value)} className={input} />
         <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={input}>
@@ -175,12 +199,15 @@ export default function AttendancePage() {
                       {" · "}<b>{hoursWords(minutesOf(s))}</b>{s.status === "closed" && s.paid_until && s.clock_out_at && s.paid_until !== s.clock_out_at && <span className="text-amber-700"> (counted up to {timeWords(s.paid_until)})</span>}
                     </div>
                     {s.flags.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{s.flags.map((f) => <span key={f} className="rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-xs text-amber-900">{FLAG_WORDS[f] || f}</span>)}</div>}
+                    <ShiftMedia items={media.filter((m) => m.shift_id === s.id)} urls={photos} />
                     {s.clocked_in_by && <div className="text-xs text-slate-500">Clocked in by a supervisor</div>}
                     {s.note && <div className="text-xs text-slate-500">Note: {s.note}</div>}
                     <div className="mt-2 flex flex-wrap gap-2">
                       {inMap && <a href={inMap} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-600 underline">📍 Clock in on map</a>}
                       {outMap && <a href={outMap} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-600 underline">📍 Clock out on map</a>}
                       <button onClick={() => void toggleRow(s.id)} className="text-xs font-semibold text-slate-600 underline">{openRow === s.id ? "Hide site checks" : "Site checks"}</button>
+                      {canAct && (s.status === "open" || (s.clock_out_at && now - new Date(s.clock_out_at).getTime() < 2 * 3600_000)) &&
+                        <button onClick={() => { setPhotoFor(s); workRef.current?.click(); }} className="text-xs font-semibold text-blue-600 underline">📷 Add work picture</button>}
                       {canAct && s.status === "open" && <button onClick={() => void clockOutRow(s)} className="text-xs font-semibold text-red-600 underline">Clock out now</button>}
                     </div>
                     {openRow === s.id && (
@@ -198,6 +225,8 @@ export default function AttendancePage() {
           })}
         </div>
       )}
+
+      </>)}
 
       {modal === "crew" && companyId && <CrewModal companyId={companyId} projects={projects} workers={workers} busyIds={shifts.filter((s) => s.status === "open").map((s) => s.worker_id)}
         onClose={() => { setModal(null); reload(); }} />}
@@ -323,5 +352,92 @@ function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => voi
       {p && p.site_lat != null && <button onClick={() => void saveRadius()} disabled={busy} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Only change the distance</button>}
       <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Done</button>
     </Shell>
+  );
+}
+
+// The pictures and voice notes of one shift.
+function ShiftMedia({ items, urls }: { items: MediaRow[]; urls: Record<string, string> }) {
+  if (!items.length) return null;
+  const pics = items.filter((m) => m.kind === "photo"), voices = items.filter((m) => m.kind === "voice");
+  return (
+    <div className="mt-2 space-y-1">
+      {pics.length > 0 && <div className="flex flex-wrap gap-1.5">{pics.map((m) => urls[m.path]
+        ? <a key={m.id} href={urls[m.path]} target="_blank" rel="noreferrer"><img src={urls[m.path]} alt={`Work at ${timeWords(m.created_at)}`} className="h-20 w-20 rounded-lg object-cover" /></a>
+        : <div key={m.id} className="h-20 w-20 rounded-lg bg-slate-100" />)}</div>}
+      {voices.map((m) => urls[m.path] && (
+        <div key={m.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">🎤 {timeWords(m.created_at)}{m.seconds ? ` · ${m.seconds}s` : ""}
+          <audio controls preload="none" src={urls[m.path]} className="h-8 max-w-[240px]" /></div>
+      ))}
+    </div>
+  );
+}
+
+// The photo diary: day by day, every picture and voice note from a project, newest first.
+function DiaryView({ companyId, projects }: { companyId: string; projects: Proj[] }) {
+  const [projectId, setProjectId] = useState<string>(projects.length === 1 ? projects[0].id : "all");
+  const [days, setDays] = useState(14);
+  const [rows, setRows] = useState<MediaRow[]>([]);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const to = todayLocal();
+        const d = new Date(to + "T12:00:00"); d.setDate(d.getDate() - (days - 1));
+        const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const r = await fetchDiary(companyId, projectId, from, to);
+        const u = await signedPhotoUrls(r.map((m) => m.path));
+        if (!alive) return;
+        setRows(r); setUrls(u);
+      } catch (e) { if (alive) setErr(e instanceof Error ? e.message : "Could not load."); }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [companyId, projectId, days]);
+
+  const byDay = useMemo(() => {
+    const m = new Map<string, MediaRow[]>();
+    rows.forEach((r) => { const k = r.work_date; if (!m.has(k)) m.set(k, []); m.get(k)!.push(r); });
+    return Array.from(m.entries());
+  }, [rows]);
+  const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || "";
+  const dayWords = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={input}>
+          <option value="all">All projects</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={input}>
+          <option value={7}>Last 7 days</option><option value={14}>Last 14 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+        </select>
+      </div>
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800">{err}</div>}
+      {loading ? <div className="text-sm text-slate-500">Loading…</div> : byDay.length === 0 ? (
+        <div className={`${card} p-6 text-center text-sm text-slate-500`}>No pictures or voice notes yet. Workers add them from the clock on their phone.</div>
+      ) : byDay.map(([d, items]) => (
+        <div key={d} className={`${card} p-3 space-y-2`}>
+          <div className="font-bold text-slate-900 dark:text-slate-100">{dayWords(d)} <span className="text-xs font-normal text-slate-500">· 📷 {items.filter((i) => i.kind === "photo").length} · 🎤 {items.filter((i) => i.kind === "voice").length}</span></div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {items.filter((i) => i.kind === "photo").map((m) => (
+              <a key={m.id} href={urls[m.path]} target="_blank" rel="noreferrer" className="block">
+                {urls[m.path] ? <img src={urls[m.path]} alt={`${wname(m.workers || null)} ${timeWords(m.created_at)}`} className="aspect-square w-full rounded-lg object-cover" /> : <div className="aspect-square w-full rounded-lg bg-slate-100" />}
+                <div className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-400">{wname(m.workers || null)} · {timeWords(m.created_at)}{projectId === "all" ? ` · ${projName(m.project_id)}` : ""}</div>
+              </a>
+            ))}
+          </div>
+          {items.filter((i) => i.kind === "voice").map((m) => urls[m.path] && (
+            <div key={m.id} className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-400">🎤 {wname(m.workers || null)} · {timeWords(m.created_at)}{m.seconds ? ` · ${m.seconds}s` : ""}{projectId === "all" ? ` · ${projName(m.project_id)}` : ""}
+              <audio controls preload="none" src={urls[m.path]} className="h-8 max-w-[260px]" /></div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }

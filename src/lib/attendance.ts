@@ -7,9 +7,10 @@ export interface ClockShift {
   id: string; project_id: string | null; project: string | null; work_date: string; status: "open" | "closed";
   clock_in_at: string; clock_out_at: string | null; out_method: string | null; in_distance_m: number | null; radius_m: number | null;
   minutes_worked: number | null; paid_until: string | null; last_on_site_at: string | null; off_site_since: string | null; flags: string[];
+  photos?: number; voices?: number;        // pictures of the work / voice notes (step 2)
 }
 export interface ClockState {
-  server_time: string; open: ClockShift | null; projects: { id: string; name: string; site_set: boolean }[];
+  server_time: string; worker_name?: string; open: ClockShift | null; projects: { id: string; name: string; site_set: boolean }[];
   last_project_id: string | null; today: ClockShift[];
 }
 export interface ClockResult { status: "on_site" | "off_site" | "unsure" | "no_location" | "clocked_out" | "no_shift" | "too_soon" | "no_session"; distance_m?: number | null; radius_m?: number | null; site_set?: boolean }
@@ -45,6 +46,61 @@ export function shrinkPhoto(file: File, maxSide = 800): Promise<string> {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read the photo")); };
     img.src = url;
   });
+}
+
+// A picture of the work: bigger (longest side 1280 px) with a dark strip at the bottom that says who, where and when.
+export function stampPhoto(file: File, lines: string[], maxSide = 1280): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const ctx = c.getContext("2d");
+      if (!ctx) { URL.revokeObjectURL(url); reject(new Error("no canvas")); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      const fs = Math.max(14, Math.round(w / 40)), pad = Math.round(fs * 0.5), barH = lines.length * (fs + pad) + pad;
+      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, h - barH, w, barH);
+      ctx.fillStyle = "#fff"; ctx.font = `600 ${fs}px sans-serif`; ctx.textBaseline = "top";
+      lines.forEach((t, i) => ctx.fillText(t, pad, h - barH + pad + i * (fs + pad), w - 2 * pad));
+      resolve(c.toDataURL("image/jpeg", 0.75));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read the photo")); };
+    img.src = url;
+  });
+}
+export function stampWords(): string {
+  return new Date().toLocaleString("en-US", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// Hold-to-talk voice note. start() asks for the microphone; stop() gives the recording (webm on Android, mp4 on iPhone).
+export interface Recording { blob: Blob; seconds: number; mime: string }
+export async function startRecording(): Promise<{ stop: () => Promise<Recording | null>; cancel: () => void }> {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const pick = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(t));
+  const rec = new MediaRecorder(stream, pick ? { mimeType: pick, audioBitsPerSecond: 32000 } : undefined);
+  const parts: Blob[] = [];
+  const started = Date.now();
+  rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+  rec.start();
+  const end = () => stream.getTracks().forEach((t) => t.stop());
+  return {
+    stop: () => new Promise((resolve) => {
+      rec.onstop = () => {
+        end();
+        const mime = (rec.mimeType || pick || "audio/webm").split(";")[0];
+        const blob = new Blob(parts, { type: mime });
+        resolve(blob.size > 500 ? { blob, seconds: Math.round((Date.now() - started) / 1000), mime } : null);
+      };
+      try { rec.stop(); } catch { end(); resolve(null); }
+    }),
+    cancel: () => { try { rec.stop(); } catch { /* fine */ } end(); },
+  };
+}
+export function blobToDataUrl(b: Blob): Promise<string> {
+  return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = () => reject(r.error); r.readAsDataURL(b); });
 }
 
 const VOICE_KEY = "magnus_clock_voice";
@@ -85,6 +141,7 @@ export const FLAG_WORDS: Record<string, string> = {
   left_site: "Left the site (clocked out by the phone)",
   forgot_clock_out: "Forgot to clock out",
   long_gap: "More than 3 hours with no site check",
+  no_work_photo: "No picture of the work",
   missed_check: "Did not answer an \"Are you on site?\" check",
 };
 export function mapLink(lat: number | null | undefined, lng: number | null | undefined): string | null {
@@ -116,6 +173,18 @@ export async function uploadClockPhoto(token: string, dataUrl: string): Promise<
     return typeof data?.path === "string" ? data.path : null;
   } catch { return null; }
 }
+
+// Pictures of the work and voice notes: saved by the server function, then added to today's shift.
+export async function uploadWorkFile(token: string, kind: "photo" | "voice", dataUrl: string): Promise<string | null> {
+  try {
+    const body = kind === "photo" ? { action: "work_photo", token, image: dataUrl } : { action: "voice", token, audio: dataUrl };
+    const { data, error } = await supabase.functions.invoke("worker-portal-files", { body });
+    if (error) return null;
+    return typeof data?.path === "string" ? data.path : null;
+  } catch { return null; }
+}
+export const addMedia = (token: string, kind: "photo" | "voice", path: string, seconds: number | null, fix: Fix | null) =>
+  rpc<{ shift_id: string; photos: number; voices: number }>("worker_clock_add_media", { p_token: token, p_kind: kind, p_path: path, p_seconds: seconds, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null });
 
 // ── office / supervisor ────────────────────────────────────────────────────────────────────────────────────
 export interface StaffShift {
@@ -176,5 +245,38 @@ export async function staffClockIn(workerId: string, projectId: string, fix: Fix
 }
 export async function staffClockOut(shiftId: string, fix: Fix | null, note?: string): Promise<void> {
   const { error } = await supabase.rpc("attendance_staff_clock_out", { p_shift: shiftId, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: null, p_note: note ?? null });
+  if (error) throw new Error(error.message);
+}
+
+// ── pictures of the work / voice notes (step 2) ────────────────────────────────────────────────────────────
+export interface MediaRow {
+  id: string; shift_id: string; worker_id: string; project_id: string | null; work_date: string; kind: "photo" | "voice"; path: string;
+  seconds: number | null; lat: number | null; lng: number | null; added_by: string | null; created_at: string;
+  workers?: { first_name: string | null; last_name: string | null } | null;
+}
+export async function fetchMediaForShifts(shiftIds: string[]): Promise<MediaRow[]> {
+  if (!shiftIds.length) return [];
+  const { data, error } = await supabase.from("attendance_media").select("*").in("shift_id", shiftIds).order("created_at");
+  if (error) throw new Error(error.message);
+  return (data || []) as MediaRow[];
+}
+// The photo diary: a project's pictures and voice notes, newest day first.
+export async function fetchDiary(companyId: string, projectId: string | "all", fromDay: string, toDay: string): Promise<MediaRow[]> {
+  let q = supabase.from("attendance_media").select("*, workers(first_name,last_name)")
+    .eq("company_id", companyId).gte("work_date", fromDay).lte("work_date", toDay)
+    .order("work_date", { ascending: false }).order("created_at", { ascending: true }).limit(300);
+  if (projectId !== "all") q = q.eq("project_id", projectId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data || []) as unknown as MediaRow[];
+}
+// A supervisor's picture of a crew member's work.
+export async function staffAddWorkPhoto(companyId: string, workerId: string, dataUrl: string, fix: Fix | null): Promise<void> {
+  const blob = await (await fetch(dataUrl)).blob();
+  const month = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 7);
+  const path = `${companyId}/attendance/${month}/${workerId}/work/${crypto.randomUUID()}.jpg`;
+  const { error: upErr } = await supabase.storage.from("private-files").upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (upErr) throw new Error("Could not save the picture.");
+  const { error } = await supabase.rpc("attendance_staff_add_media", { p_worker: workerId, p_kind: "photo", p_path: path, p_seconds: null, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null });
   if (error) throw new Error(error.message);
 }

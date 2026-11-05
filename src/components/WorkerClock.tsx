@@ -4,7 +4,7 @@
 // worker is still on site; leaving the site clocks them out (the server decides, after two off-site checks 3 minutes apart).
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  clockAnswer, clockCheck, clockIn, clockMissed, clockOut, clockState, distanceWords, getFix, hoursWords, setVoiceOn, shrinkPhoto, speak, timeWords, uploadClockPhoto, voiceOn,
+  addMedia, blobToDataUrl, clockAnswer, clockCheck, clockIn, clockMissed, stampPhoto, stampWords, startRecording, uploadWorkFile, clockOut, clockState, distanceWords, getFix, hoursWords, setVoiceOn, shrinkPhoto, speak, timeWords, uploadClockPhoto, voiceOn,
   type ClockResult, type ClockState,
 } from "../lib/attendance";
 
@@ -25,7 +25,12 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
   const [now, setNow] = useState(() => Date.now());
   const [voice, setVoice] = useState(voiceOn());
   const [askedCamera, setAskedCamera] = useState(false);
-  const [confirmOut, setConfirmOut] = useState(false);
+  const [outStep, setOutStep] = useState(false);                    // clocking out: "take a picture of your work" first
+  const [thumbs, setThumbs] = useState<string[]>([]);               // pictures taken on this phone today (to show them back)
+  const [recording, setRecording] = useState(false);
+  const recRef = useRef<Awaited<ReturnType<typeof startRecording>> | null>(null);
+  const recTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const workRef = useRef<HTMLInputElement>(null);
   const [noGps, setNoGps] = useState(false);
   const [askSince, setAskSince] = useState<number | null>(null);     // when "Are you still on site?" went up
   const askAt = useRef<number>(nextAsk());
@@ -148,13 +153,13 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
     } finally { setBusy(null); setAskedCamera(false); }
   }
 
-  async function pressClockOut() {
-    if (!confirmOut) {
-      setConfirmOut(true); speak("Tap the red button again to clock out.");
-      setTimeout(() => setConfirmOut(false), 6000);
-      return;
-    }
-    setConfirmOut(false);
+  // CLOCK OUT: first "take a picture of what you did today", then finish
+  function pressClockOut() {
+    setOutStep(true);
+    speak((open?.photos || 0) > 0 ? "Take another picture, or tap the red button to finish." : "Take a picture of what you did today.");
+  }
+
+  async function finishClockOut() {
     try {
       setBusy("Finding where you are…");
       const fix = await getFix();
@@ -168,12 +173,67 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
         setBanner({ kind: "good", icon: "👋", text: `You are clocked out. You worked ${worked} today.` });
         speak(`You are clocked out. You worked ${worked.replace("hrs", "hours").replace("hr", "hour").replace("min", "minutes")}. Thank you.`);
       }
+      setOutStep(false);
       await refresh();
     } catch (e) {
       setBanner({ kind: "bad", icon: "❌", text: e instanceof Error ? e.message : "Could not clock out. Try again." });
       speak("That did not work. Try again.");
     } finally { setBusy(null); }
   }
+
+  // A picture of the work: name, site and time are written on it
+  function pressWorkPhoto() { speak("Take a picture of the work."); workRef.current?.click(); }
+  async function saveWorkPhoto(file: File) {
+    try {
+      setBusy("Saving your picture…");
+      const project = open?.project || st?.today[st.today.length - 1]?.project || "";
+      const data = await stampPhoto(file, [[st?.worker_name, project].filter(Boolean).join(" · "), stampWords()]);
+      const [path, fix] = await Promise.all([uploadWorkFile(token, "photo", data), getFix(10000)]);
+      if (!path) throw new Error("The picture did not save. Check your signal and try again.");
+      const r = await addMedia(token, "photo", path, null, fix);
+      setThumbs((t) => [...t, data].slice(-6));
+      setBanner({ kind: "good", icon: "📷", text: `Picture saved. ${r.photos} today.` });
+      speak(outStep ? "Picture saved. Take another one, or tap the red button to finish." : "Picture saved.");
+      await refresh();
+    } catch (e) {
+      setBanner({ kind: "bad", icon: "📷", text: e instanceof Error ? e.message : "The picture did not save." });
+      speak("The picture did not save. Try again.");
+    } finally { setBusy(null); }
+  }
+
+  // Hold to talk: press and hold the microphone button, let go to save (at most 90 seconds)
+  async function talkStart() {
+    if (recording || busy) return;
+    try {
+      recRef.current = await startRecording();
+      setRecording(true);
+      try { navigator.vibrate?.(80); } catch { /* fine */ }
+      recTimer.current = setTimeout(() => { void talkStop(); }, 90000);
+    } catch {
+      setBanner({ kind: "warn", icon: "🎤", text: "The phone did not let this page use the microphone. Allow it and try again." });
+      speak("Please allow the microphone.");
+    }
+  }
+  async function talkStop() {
+    if (recTimer.current) { clearTimeout(recTimer.current); recTimer.current = null; }
+    const r = recRef.current; recRef.current = null;
+    if (!r) return;
+    setRecording(false);
+    const rec = await r.stop();
+    if (!rec || rec.seconds < 1) { speak("Hold the button down while you talk."); setBanner({ kind: "warn", icon: "🎤", text: "Hold the button down while you talk, then let go." }); return; }
+    try {
+      setBusy("Saving your voice note…");
+      const path = await uploadWorkFile(token, "voice", await blobToDataUrl(rec.blob));
+      if (!path) throw new Error("The voice note did not save. Check your signal and try again.");
+      const r2 = await addMedia(token, "voice", path, rec.seconds, null);
+      setBanner({ kind: "good", icon: "🎤", text: `Voice note saved. ${r2.voices} today.` });
+      speak("Voice note saved.");
+      await refresh();
+    } catch (e) {
+      setBanner({ kind: "bad", icon: "🎤", text: e instanceof Error ? e.message : "The voice note did not save." });
+    } finally { setBusy(null); }
+  }
+  useEffect(() => () => { recRef.current?.cancel(); if (recTimer.current) clearTimeout(recTimer.current); }, []);
 
   if (!st) return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-xl text-slate-500">Loading the clock…</div>;
 
@@ -183,6 +243,8 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
 
   return (
     <section className="rounded-3xl border-2 border-slate-200 bg-white p-4 space-y-4" aria-label="Clock in and out">
+      <input ref={workRef} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; if (f) void saveWorkPhoto(f); }} />
       <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; if (f) void doClockIn(f); }} />
 
@@ -236,14 +298,45 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
           <div className="text-lg text-green-900">since {timeWords(open.clock_in_at)}</div>
         </div>
         <p className="text-base text-slate-600">📱 Keep this page open while you work. The phone checks that you are on the site every 10 minutes. If you leave the site, you are clocked out. Sometimes the phone buzzes and asks "Are you still on site?": tap the yellow button.</p>
-        <button onClick={() => void pressClockOut()} disabled={!!busy}
-          className={`w-full min-h-[110px] rounded-3xl text-white shadow-lg disabled:opacity-50 ${confirmOut ? "bg-red-800 ring-4 ring-red-300" : "bg-red-600 hover:bg-red-500 active:bg-red-700"}`}>
-          <div className="text-5xl leading-none">⏹️</div>
-          <div className="mt-1 text-3xl font-extrabold tracking-wide">{confirmOut ? "TAP AGAIN" : "CLOCK OUT"}</div>
-          {confirmOut && <div className="text-lg opacity-90">to finish for today</div>}
-        </button>
+        {!outStep ? (<>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={pressWorkPhoto} disabled={!!busy} className="min-h-[90px] rounded-2xl border-2 border-blue-300 bg-blue-50 text-blue-900 disabled:opacity-50">
+              <div className="text-4xl leading-none">📷</div><div className="mt-1 text-lg font-bold">Picture of work</div>
+            </button>
+            <TalkButton recording={recording} disabled={!!busy && !recording} onStart={() => void talkStart()} onStop={() => void talkStop()} />
+          </div>
+          {((open.photos || 0) > 0 || (open.voices || 0) > 0) && <div className="text-lg text-slate-700">Today: 📷 {open.photos || 0} · 🎤 {open.voices || 0}</div>}
+          <button onClick={pressClockOut} disabled={!!busy}
+            className="w-full min-h-[110px] rounded-3xl bg-red-600 hover:bg-red-500 active:bg-red-700 text-white shadow-lg disabled:opacity-50">
+            <div className="text-5xl leading-none">⏹️</div>
+            <div className="mt-1 text-3xl font-extrabold tracking-wide">CLOCK OUT</div>
+          </button>
+        </>) : (
+          <div className="space-y-3 rounded-3xl border-2 border-red-300 bg-red-50 p-4">
+            <div className="text-2xl font-bold text-red-900">📷 Show what you did today</div>
+            <div className="text-lg text-red-900">Take a picture of your work. You can also hold 🎤 and talk.</div>
+            {thumbs.length > 0 && <div className="flex gap-2 overflow-x-auto">{thumbs.map((t, i) => <img key={i} src={t} alt={`Work picture ${i + 1}`} className="h-20 w-20 shrink-0 rounded-xl object-cover" />)}</div>}
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={pressWorkPhoto} disabled={!!busy} className="min-h-[100px] rounded-2xl bg-blue-600 text-white disabled:opacity-50">
+                <div className="text-5xl leading-none">📷</div><div className="mt-1 text-xl font-bold">TAKE PICTURE</div>
+              </button>
+              <TalkButton recording={recording} disabled={!!busy && !recording} onStart={() => void talkStart()} onStop={() => void talkStop()} />
+            </div>
+            <div className="text-lg font-semibold text-slate-800">📷 {open.photos || 0} picture{open.photos === 1 ? "" : "s"} · 🎤 {open.voices || 0} voice note{open.voices === 1 ? "" : "s"}</div>
+            {(open.photos || 0) === 0 && <div className="text-base text-amber-800">⚠️ No picture yet. The office will see that.</div>}
+            <button onClick={() => void finishClockOut()} disabled={!!busy || recording}
+              className="w-full min-h-[100px] rounded-3xl bg-red-600 hover:bg-red-500 text-white shadow-lg disabled:opacity-50">
+              <div className="text-4xl leading-none">⏹️</div>
+              <div className="mt-1 text-2xl font-extrabold">FINISH · CLOCK OUT</div>
+            </button>
+            <button onClick={() => { setOutStep(false); speak("Back to work."); }} className="w-full min-h-[52px] rounded-2xl border-2 border-slate-300 bg-white text-lg text-slate-700">⬅ Not yet, back to work</button>
+          </div>
+        )}
       </>)}
 
+      {!open && st.today.length > 0 && st.today[st.today.length - 1].clock_out_at && Date.now() - new Date(st.today[st.today.length - 1].clock_out_at!).getTime() < 2 * 3600_000 && (
+        <button onClick={pressWorkPhoto} disabled={!!busy} className="w-full min-h-[64px] rounded-2xl border-2 border-blue-300 bg-blue-50 text-xl font-bold text-blue-900 disabled:opacity-50">📷 Add a picture of today's work</button>
+      )}
       {st.today.length > 0 && (
         <div className="rounded-2xl bg-slate-50 p-3">
           <div className="text-lg font-semibold text-slate-700">Today: {hoursWords(doneToday)}</div>
@@ -256,5 +349,19 @@ export default function WorkerClock({ token, onSessionEnded }: { token: string; 
         </div>
       )}
     </section>
+  );
+}
+
+// Press and hold to record; let go to save.
+function TalkButton({ recording, disabled, onStart, onStop }: { recording: boolean; disabled: boolean; onStart: () => void; onStop: () => void }) {
+  return (
+    <button type="button" disabled={disabled}
+      onPointerDown={(e) => { e.preventDefault(); (e.currentTarget as HTMLButtonElement).setPointerCapture?.(e.pointerId); onStart(); }}
+      onPointerUp={() => onStop()} onPointerCancel={() => onStop()} onContextMenu={(e) => e.preventDefault()}
+      style={{ touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
+      className={`min-h-[90px] rounded-2xl border-2 disabled:opacity-50 ${recording ? "border-red-500 bg-red-500 text-white animate-pulse" : "border-purple-300 bg-purple-50 text-purple-900"}`}>
+      <div className="text-4xl leading-none">🎤</div>
+      <div className="mt-1 text-lg font-bold">{recording ? "Talking… let go" : "Hold to talk"}</div>
+    </button>
   );
 }
