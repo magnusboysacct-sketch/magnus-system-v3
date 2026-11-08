@@ -319,7 +319,7 @@ export default function ReconcilePage() {
     })().catch((e: unknown) => setError(msg(e)));
   }, []);
 
-  const canReconcile = ["director", "admin", "office_user"].includes(role);
+  const canReconcile = ["director", "admin", "office_user", "accountant"].includes(role);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">

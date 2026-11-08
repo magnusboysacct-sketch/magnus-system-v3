@@ -35,7 +35,10 @@ export type Role =
   | "supervisor"
   | "office_user"
   | "site_user"
-  | "secretary";
+  | "secretary"
+  // 'accountant' (migration 20260995000000): invited, often from outside; full finance access and nothing else (no payroll / HR,
+  // field, estimating, settings). One login belongs to one company.
+  | "accountant";
 
 // Worker creation ceiling — mirrors the workers table's role-gated INSERT
 // RLS policy (see 20260808000000_role_gate_worker_creation.sql). Keep the

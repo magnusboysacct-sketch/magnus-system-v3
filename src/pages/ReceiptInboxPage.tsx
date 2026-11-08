@@ -225,7 +225,7 @@ export default function ReceiptInboxPage() {
       )}
 
       {billFor && (
-        <NewBillModal open companyId={companyId} canApprove={["director", "admin", "office_user"].includes(me?.role || "")}
+        <NewBillModal open companyId={companyId} canApprove={["director", "admin", "office_user", "accountant"].includes(me?.role || "")}
           onClose={() => setBillFor(null)} onDone={(m) => { setMsg({ ok: true, text: m }); reload(); }}
           inbox={{ path: billFor.item.file_path, file: billFor.file, projectId: billFor.item.project_id, onFiled: (billId) => markDone(billFor.item.id, "bill", billId) }} />
       )}

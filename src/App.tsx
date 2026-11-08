@@ -383,8 +383,8 @@ export default function App() {
                   a normal route addition (not a root-route switch like the
                   Director Dashboard, since this is an additional nav
                   section, not a landing-page replacement). */}
-              <Route path="/receipt-inbox"                 element={<RoleGuard allowedRoles={["director","admin","estimator","supervisor","office_user","site_user","secretary"]}><ReceiptInboxPage /></RoleGuard>} />
-              <Route path="/documents"                     element={<RoleGuard allowedRoles={["director","admin","estimator","supervisor","office_user","site_user","secretary"]}><DocumentsPage /></RoleGuard>} />
+              <Route path="/receipt-inbox"                 element={<RoleGuard allowedRoles={["director","admin","estimator","supervisor","office_user","site_user","secretary","accountant"]}><ReceiptInboxPage /></RoleGuard>} />
+              <Route path="/documents"                     element={<RoleGuard allowedRoles={["director","admin","estimator","supervisor","office_user","site_user","secretary","accountant"]}><DocumentsPage /></RoleGuard>} />
               <Route path="/secretary"                     element={<RoleGuard allowedRoles={["secretary","admin","director"]}><SecretaryWorkspacePage /></RoleGuard>} />
 
               {/* Reports + Settings */}

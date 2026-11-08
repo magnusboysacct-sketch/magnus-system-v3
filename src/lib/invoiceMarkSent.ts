@@ -15,7 +15,7 @@ export const SENT_METHODS: Array<{ value: SentMethod; label: string }> = [
 export const sentMethodLabel = (m: string | null | undefined): string => SENT_METHODS.find((x) => x.value === m)?.label ?? (m ? String(m) : "");
 
 // Same roles as "Send to Client" (the database function share_with_client)
-const SEND_ROLES = ["director", "admin", "estimator", "supervisor", "office_user", "secretary"];
+const SEND_ROLES = ["director", "admin", "estimator", "supervisor", "office_user", "secretary", "accountant"];
 export const canMarkSent = (role: string | null | undefined): boolean => SEND_ROLES.includes(String(role ?? ""));
 export const canUndoMarkedSent = (role: string | null | undefined): boolean => role === "director" || role === "admin";
 

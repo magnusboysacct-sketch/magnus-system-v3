@@ -14,7 +14,8 @@ type Role =
   | "supervisor"
   | "office_user"
   | "site_user"
-  | "secretary";
+  | "secretary"
+  | "accountant";
 
 type Status = "active" | "disabled";
 type InviteStatus = "pending" | "accepted" | "revoked" | "expired";
@@ -77,6 +78,7 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "office_user", label: "Office User" },
   { value: "site_user", label: "Site User" },
   { value: "secretary", label: "Secretary" },
+  { value: "accountant", label: "Accountant" },
 ];
 
 const ROLE_META: Record<
@@ -124,6 +126,12 @@ const ROLE_META: Record<
     dot: "bg-pink-500",
     label: "Secretary",
     desc: "Correspondence, worker admin documents, compliance filing, scheduling — no financial or settings access",
+  },
+  accountant: {
+    color: "bg-lime-100 text-lime-800 border-lime-300",
+    dot: "bg-lime-500",
+    label: "Accountant",
+    desc: "The books: all of Finance, bills, bank review and reconcile, the Receipt Inbox and Documents. No payroll, field, estimating or settings. Can work from home.",
   },
 };
 

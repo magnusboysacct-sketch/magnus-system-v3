@@ -3,7 +3,7 @@
 // The roles an invitation may carry: exactly the live user_profiles.role / company_invitations.role vocabulary. Anything else is refused with a message,
 // never quietly turned into another role: an unknown or mistyped role used to become "site_user", a staff role with field and worker access.
 
-export const INVITE_ROLES = ["director", "admin", "estimator", "supervisor", "office_user", "site_user", "secretary"] as const;
+export const INVITE_ROLES = ["director", "admin", "estimator", "supervisor", "office_user", "site_user", "secretary", "accountant"] as const;
 export type InviteRole = (typeof INVITE_ROLES)[number];
 
 export type InviteRoleResult = { ok: true; role: InviteRole } | { ok: false; error: string };

@@ -129,7 +129,7 @@ export default function BankReviewPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const canReview = ["director", "admin", "office_user"].includes(role);
+  const canReview = ["director", "admin", "office_user", "accountant"].includes(role);
 
   useEffect(() => {
     (async () => {

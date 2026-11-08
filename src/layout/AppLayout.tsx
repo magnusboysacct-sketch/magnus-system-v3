@@ -344,7 +344,10 @@ export default function AppLayout() {
   // than showing a destination that just 403s. Groups left with no visible
   // children are dropped entirely.
   const visibleNav = useMemo(() => {
+    // The accountant sees the books only: Dashboard, Finance, the Receipt Inbox and Documents.
+    const ACCOUNTANT_ITEMS = ["Dashboard", "Finance", "Receipt Inbox", "Documents"];
     return NAV
+      .filter(item => userRole !== "accountant" || ACCOUNTANT_ITEMS.includes(item.label))
       .map(item => {
         if (item.label === "CRM") {
           const children = item.children?.map(c =>

@@ -101,7 +101,7 @@ export default function AccountsPayablePage() {
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [disputing, setDisputing] = useState<string | null>(null);
-  const canApprove = ["director", "admin", "office_user"].includes(role);
+  const canApprove = ["director", "admin", "office_user", "accountant"].includes(role);
   const [payments, setPayments] = useState<BillPayment[]>([]);
   const [paying, setPaying] = useState<null | "bill" | "retention">(null);
   const [proofFor, setProofFor] = useState<{ id: string; amount: number; signed: boolean; hasPhoto: boolean; name: string } | null>(null);
