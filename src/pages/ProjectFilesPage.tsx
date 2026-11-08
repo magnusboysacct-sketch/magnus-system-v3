@@ -8,6 +8,7 @@ import {
   FOLDER_WORDS, addProjectFile, fileProblem, listProjectFiles, openProjectFile, removeProjectFile, updateProjectFile,
   type FileFolder, type ProjectFile,
 } from "../lib/projectFiles";
+import { RENEW_MS, downloadLink, fileLinks } from "../lib/fileLinks";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -72,6 +73,17 @@ export default function ProjectFilesPage() {
   const canStatements = me?.finance === "full";
   const blocked = folder === "statement" && me != null && !canStatements;
   const canChange = (f: ProjectFile) => me != null && (f.uploaded_by === me.id || ["director", "admin"].includes(me.role));
+
+
+  // ready-made Open / Download links (plain links open on every phone; renewed before they run out)
+  const [links, setLinks] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = () => { void fileLinks(inFolder.map((x) => x.file_path)).then((m) => { if (alive) setLinks(m); }).catch(() => { /* the buttons still work */ }); };
+    load();
+    const t = setInterval(load, RENEW_MS);
+    return () => { alive = false; clearInterval(t); };
+  }, [inFolder]);
 
   function pick(list: FileList | null) {
     const arr = Array.from(list || []);
@@ -190,14 +202,20 @@ export default function ProjectFilesPage() {
               <div key={f.id} className={`${card} p-3 flex flex-wrap items-center gap-3`}>
                 <div className="text-2xl">{icon(f)}</div>
                 <div className="min-w-0 flex-1">
-                  <button onClick={() => void open(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-all">{f.file_name}</button>
+                  {links[f.file_path]
+                    ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-all">{f.file_name}</a>
+                    : <button onClick={() => void open(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-all">{f.file_name}</button>}
                   <div className="text-xs text-slate-500">
                     {f.doc_date ? day(f.doc_date) : "No date"}{f.amount != null ? ` · ${money(Number(f.amount))}` : ""}{f.note ? ` · ${f.note}` : ""} · {kb(f.size_bytes)}
                   </div>
                 </div>
                 <div className="flex gap-3 text-xs font-semibold">
-                  <button onClick={() => void open(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>
-                  <button onClick={() => void open(f, true)} className="text-slate-600 dark:text-slate-300 underline">Download</button>
+                  {links[f.file_path]
+                    ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-blue-700 dark:text-blue-400 underline">Open</a>
+                    : <button onClick={() => void open(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>}
+                  {links[f.file_path]
+                    ? <a href={downloadLink(links[f.file_path], f.file_name)} download={f.file_name} className="text-slate-600 dark:text-slate-300 underline">Download</a>
+                    : <button onClick={() => void open(f, true)} className="text-slate-600 dark:text-slate-300 underline">Download</button>}
                   {canChange(f) && <button onClick={() => void edit(f)} className="text-slate-600 dark:text-slate-300 underline">Edit</button>}
                   {canChange(f) && <button onClick={() => void remove(f)} className="text-red-600 underline">Remove</button>}
                 </div>

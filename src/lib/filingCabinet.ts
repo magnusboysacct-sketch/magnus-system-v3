@@ -2,6 +2,7 @@
 // Drawers (doc_drawers) hold documents (doc_files). The file is in the private-files bucket: normal drawers under
 // <company>/documents/, private drawers under <company>/finance/documents/ (only full finance access can open those).
 import { supabase } from "./supabase";
+import { openLater } from "./fileLinks";
 
 export interface Drawer { id: string; company_id: string; name: string; is_private: boolean; sort: number; created_at: string }
 export interface DocFile {
@@ -82,9 +83,11 @@ export async function addDoc(o: { companyId: string; drawer: Drawer | null; proj
 }
 
 export async function openDoc(f: DocFile, download = false): Promise<void> {
-  const { data, error } = await supabase.storage.from("private-files").createSignedUrl(f.file_path, 300, download ? { download: f.file_name } : undefined);
-  if (error || !data?.signedUrl) throw new Error("Could not open the file.");
-  window.open(data.signedUrl, "_blank", "noopener");
+  await openLater(async () => {
+    const { data, error } = await supabase.storage.from("private-files").createSignedUrl(f.file_path, 300, download ? { download: f.file_name } : undefined);
+    if (error || !data?.signedUrl) throw new Error(`Could not open the file${error?.message ? ` (${error.message})` : ""}.`);
+    return data.signedUrl;
+  });
 }
 
 // Change the details; moving between a private and a normal drawer also moves the file to the matching place.

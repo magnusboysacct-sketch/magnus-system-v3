@@ -2,6 +2,7 @@
 // The row is in project_files; the file is in the private-files bucket (statements under the company's finance folder, so only
 // people with full finance access can open them). Opening a file uses a short-lived signed link.
 import { supabase } from "./supabase";
+import { openLater } from "./fileLinks";
 
 export type FileFolder = "client_boq" | "statement";
 export interface ProjectFile {
@@ -52,9 +53,11 @@ export async function addProjectFile(o: { companyId: string; projectId: string; 
 }
 
 export async function openProjectFile(f: ProjectFile, download = false): Promise<void> {
-  const { data, error } = await supabase.storage.from("private-files").createSignedUrl(f.file_path, 300, download ? { download: f.file_name } : undefined);
-  if (error || !data?.signedUrl) throw new Error("Could not open the file.");
-  window.open(data.signedUrl, "_blank", "noopener");
+  await openLater(async () => {
+    const { data, error } = await supabase.storage.from("private-files").createSignedUrl(f.file_path, 300, download ? { download: f.file_name } : undefined);
+    if (error || !data?.signedUrl) throw new Error(`Could not open the file${error?.message ? ` (${error.message})` : ""}.`);
+    return data.signedUrl;
+  });
 }
 
 export async function updateProjectFile(id: string, patch: { doc_date?: string | null; amount?: number | null; note?: string | null }): Promise<void> {

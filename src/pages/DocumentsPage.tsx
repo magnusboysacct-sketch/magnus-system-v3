@@ -7,6 +7,7 @@ import {
   MAX_DOC_MB, STARTER_DRAWERS, addDoc, addDrawer, addStarterDrawers, docIcon, listDocs, listDrawers, openDoc, removeDoc, removeDrawer, renameDrawer,
   sizeWords, updateDoc, type DocFile, type Drawer,
 } from "../lib/filingCabinet";
+import { RENEW_MS, downloadLink, fileLinks } from "../lib/fileLinks";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -84,6 +85,17 @@ export default function DocumentsPage() {
       && (!q || [d.title, d.file_name, d.note, projName(d.project_id), drawerName(d.drawer_id)].some((s) => (s || "").toLowerCase().includes(q))));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, where, job, search, drawers, projects]);
+
+
+  // ready-made Open / Download links (plain links open on every phone; renewed before they run out)
+  const [links, setLinks] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = () => { void fileLinks(shown.map((x) => x.file_path)).then((m) => { if (alive) setLinks(m); }).catch(() => { /* the buttons still work */ }); };
+    load();
+    const t = setInterval(load, RENEW_MS);
+    return () => { alive = false; clearInterval(t); };
+  }, [shown]);
 
   // ── adding ─────────────────────────────────────────────────────────────────────────────────────────────
   function pick(list: FileList | File[] | null) {
@@ -215,15 +227,21 @@ export default function DocumentsPage() {
                 <div key={f.id} className={`${card} p-3 flex flex-wrap items-center gap-3`}>
                   <div className="text-2xl">{docIcon(f.mime_type)}</div>
                   <div className="min-w-0 flex-1">
-                    <button onClick={() => void open(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-words">{f.title}</button>
+                    {links[f.file_path]
+                      ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-words">{f.title}</a>
+                      : <button onClick={() => void open(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-words">{f.title}</button>}
                     <div className="text-xs text-slate-500 break-all">
                       {f.doc_date ? `${day(f.doc_date)} · ` : ""}{where === ALL ? `🗂️ ${drawerName(f.drawer_id)} · ` : ""}{f.project_id ? `🏗️ ${projName(f.project_id)} · ` : ""}{f.is_private ? "🔒 · " : ""}{f.file_name} · {sizeWords(f.size_bytes)}
                     </div>
                     {f.note && <div className="text-xs text-slate-600 dark:text-slate-400">{f.note}</div>}
                   </div>
                   <div className="flex gap-3 text-xs font-semibold">
-                    <button onClick={() => void open(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>
-                    <button onClick={() => void open(f, true)} className="text-slate-600 dark:text-slate-300 underline">Download</button>
+                    {links[f.file_path]
+                      ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-blue-700 dark:text-blue-400 underline">Open</a>
+                      : <button onClick={() => void open(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>}
+                    {links[f.file_path]
+                      ? <a href={downloadLink(links[f.file_path], f.file_name)} download={f.file_name} className="text-slate-600 dark:text-slate-300 underline">Download</a>
+                      : <button onClick={() => void open(f, true)} className="text-slate-600 dark:text-slate-300 underline">Download</button>}
                     {canChange(f) && <button onClick={() => setEditing(f)} className="text-slate-600 dark:text-slate-300 underline">Edit / move</button>}
                     {canRemove(f) && <button onClick={() => void remove(f)} className="text-red-600 underline">Remove</button>}
                   </div>
