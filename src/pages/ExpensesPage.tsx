@@ -3,6 +3,8 @@ import { PRIVATE_FILES_BUCKET, resolveFileUrl, safeUploadName, toStoredRef, with
 import { fetchBillPictures, folderMonth, listReceiptFiles, type BillPicture, type FolderFile } from "../lib/receiptsFolder";
 import { describeDuplicate, useDuplicateCheck } from "../lib/duplicates";
 import React, { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { markDone, type FromInbox } from "../lib/receiptInbox";
 import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
 import { showPrintPreview } from "../lib/printPreview";
@@ -199,6 +201,26 @@ export default function ExpensesPage() {
     if (companyId) { loadExpenses(); loadCategories(); loadAccounts(); loadFolder(); }
   }, [companyId]);
 
+  // Opened from the Receipt Inbox ("Make it an expense"): the form starts filled in from what the AI read, with the picture
+  // attached. When it is saved, the receipt leaves the inbox and the page goes back to the inbox.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const fromInbox = useRef<FromInbox | null>(null);
+  useEffect(() => {
+    const fi = (location.state as { fromInbox?: FromInbox } | null)?.fromInbox;
+    if (!fi) return;
+    fromInbox.current = fi;
+    navigate(location.pathname, { replace: true, state: null });
+    setNotDuplicate(false); setReceiptFile(null); setEditingExpense(null);
+    const a = fi.ai || {};
+    setForm({ ...blankForm, receipt_url: fi.path, project_id: fi.projectId || "",
+      amount: a.amount ? String(a.amount) : "", expense_date: a.date && /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : "",
+      vendor: a.vendor || "", receipt_number: a.receiptNumber || "",
+      description: fi.note || (a.vendor ? `Purchase at ${a.vendor}` : "") });
+    setShowNew(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function loadFolder() {
     if (!companyId) return;
     fetchBillPictures(companyId).then(setBillPics).catch(() => setBillPics([]));
@@ -390,6 +412,16 @@ export default function ExpensesPage() {
         const { data: created, error: e } = await supabase.from("expenses").insert({ company_id: companyId, ...payload }).select("id").single();
         if (e) throw e;
         savedId = created?.id;
+        // from the Receipt Inbox: the receipt is filed now (it leaves the inbox)
+        if (savedId && fromInbox.current && payload.receipt_url === fromInbox.current.path) {
+          const fi = fromInbox.current; fromInbox.current = null;
+          try { await markDone(fi.id, "expense", savedId); }
+          catch (me: unknown) { setListNote(`Saved, but the receipt is still in the inbox: ${me instanceof Error ? me.message : "try again"}.`); }
+          if (savedId && POSTABLE_STATUSES.includes(payload.status)) await postAndReport(savedId, "Saved. ");
+          closeModal();
+          navigate("/receipt-inbox", { state: { filed: "Filed as an expense." } });
+          return;
+        }
       }
       // Approved / paid: post to the ledger (does nothing if it's already posted). A problem here never undoes the save.
       if (savedId && POSTABLE_STATUSES.includes(payload.status)) await postAndReport(savedId, "Saved. ");
@@ -537,7 +569,8 @@ export default function ExpensesPage() {
     ...[...receiptRefs.current.values()].map(v => toStoredRef(v)).filter((v): v is string => !!v),
     ...billPics.map(b => b.path),
   ]);
-  const looseFiles = (folderFiles || []).filter(f => !attachedPaths.has(f.path));
+  // pictures still waiting in the Receipt Inbox (inbox-...) are the inbox's to file, not loose pictures
+  const looseFiles = (folderFiles || []).filter(f => !attachedPaths.has(f.path) && !f.name.startsWith("inbox-"));
   const expenseReceipts = expenses.filter(e => !!e.receipt_url);
   const cabinetCount = expenseReceipts.length + billPics.length + looseFiles.length;
 

@@ -4,7 +4,7 @@
 // Scan the bill: the AI reads who it is from, the number, dates, lines and GCT; the picture is filed in the monthly
 // receipts folder (same as expense receipts) and kept with the bill. Someone not in the list can be added on the spot.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { Modal, Field, Input, Select, Btn, Textarea } from "./ui";
 import { supabase } from "../lib/supabase";
@@ -31,14 +31,18 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 type Line = { key: number; item: string; accountId: string; amount: string };
 const blankLine = (key: number, accountId = ""): Line => ({ key, item: "", accountId, amount: "" });
 
-export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
+export function NewBillModal({ open, onClose, companyId, canApprove, onDone, inbox }: {
   open: boolean;
   onClose: () => void;
   companyId: string | null;
   canApprove: boolean;
   onDone: (message: string) => void;
+  // From the Receipt Inbox: the picture (already in the receipts folder) is read and kept with the bill; onFiled gets the new bill id.
+  inbox?: { path: string; file: File; projectId: string | null; onFiled: (billId: string) => Promise<void> } | null;
 }) {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [listsReady, setListsReady] = useState(false);              // suppliers, workers and accounts loaded (the scan matches against them)
+  const inboxScanned = useRef<string | null>(null);
   const [workers, setWorkers] = useState<WorkerOption[]>([]);
   const [linking, setLinking] = useState(false);
   const [accounts, setAccounts] = useState<CostAccount[]>([]);
@@ -69,6 +73,8 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     setScanNote(null);
     setNotFound(null);
     setPaperTotal(null);
+    setListsReady(false);
+    inboxScanned.current = null;
     Promise.all([
       fetchSuppliers(companyId),
       fetchCostAccounts(companyId),
@@ -80,6 +86,7 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
       setWorkers(w);
       setAccounts(a);
       setProjects(((pr.data || []) as { id: string; name: string; status: string }[]).filter((p) => p.status !== "cancelled"));
+      setListsReady(true);
     }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : "Could not load the form."); });
     return () => { alive = false; };
   }, [open, companyId]);
@@ -91,6 +98,15 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  // From the Receipt Inbox: read the picture as soon as the lists are ready (once per receipt).
+  useEffect(() => {
+    if (!open || !inbox || !listsReady || inboxScanned.current === inbox.path) return;
+    inboxScanned.current = inbox.path;
+    if (inbox.projectId) setForm((f0) => ({ ...f0, projectId: inbox.projectId || "" }));
+    void scan(inbox.file);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, inbox, listsReady]);
 
   async function scan(f: File) {
     setFile(f);
@@ -226,7 +242,11 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
       );
       // File the picture in the monthly receipts folder and keep it with the bill.
       let fileNote = "";
-      if (file && companyId) {
+      if (inbox && file === inbox.file) {
+        // the Receipt Inbox picture is already in the receipts folder: keep that one, and take it out of the inbox
+        try { await setBillFile(billId, inbox.path); await inbox.onFiled(billId); fileNote = " The receipt left the inbox."; }
+        catch (e: unknown) { fileNote = ` The bill is saved, but the receipt is still in the inbox (${e instanceof Error ? e.message : "try again"}).`; }
+      } else if (file && companyId) {
         try {
           await setBillFile(billId, await uploadBillFile(companyId, file, form.date));
           fileNote = " The picture is filed in the receipts folder.";

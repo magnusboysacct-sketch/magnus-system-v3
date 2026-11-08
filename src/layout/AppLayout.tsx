@@ -18,7 +18,7 @@ import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
   ChevronLeft, ChevronRight, Building2, Layers,
-  Receipt, Truck, HardHat, Banknote, BookOpen, Clock, Archive,
+  Receipt, Truck, HardHat, Banknote, BookOpen, Clock, Archive, Inbox,
   ClipboardList, Package, PieChart, Wrench, Landmark,
   ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool, ShieldCheck, CreditCard, LifeBuoy
 } from "lucide-react";
@@ -88,6 +88,7 @@ const NAV: NavItem[] = [
       { label: "Field Ops",  icon: <ClipboardList size={14}/>, to: "/field-ops" },
     ]
   },
+  { label: "Receipt Inbox", icon: <Inbox size={15}/>, to: "/receipt-inbox" }, // snap receipts; the accountant files them
   { label: "Documents", icon: <Archive size={15}/>, to: "/documents" },      // the company filing cabinet
   { label: "Secretary Workspace", icon: <Briefcase size={15}/>, to: "/secretary" },
   { label: "Reports",  icon: <BarChart3 size={15}/>, to: "/reports" },
