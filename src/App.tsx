@@ -30,6 +30,7 @@ import AuthConfirmPage        from "./pages/AuthConfirmPage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
 import WorkerLoginPage        from "./pages/WorkerLoginPage";
 import GetAppPage             from "./pages/GetAppPage";
+import ProjectFilesPage       from "./pages/ProjectFilesPage";
 import WorkerHomePage         from "./pages/WorkerHomePage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
 import FieldAppPage           from "./pages/FieldAppPage";
@@ -333,6 +334,7 @@ export default function App() {
               <Route path="/projects/:projectId/finance/transactions" element={<ByUrlProject><FinanceTransactionsPage /></ByUrlProject>} />
               <Route path="/projects/:projectId/finance/reports"      element={<ByUrlProject><FinanceGuard level="project"><FinanceReportsPage /></FinanceGuard></ByUrlProject>} />
               <Route path="/projects/:projectId/reports"      element={<ByUrlProject><ReportsPage /></ByUrlProject>} />
+              <Route path="/projects/:projectId/files"        element={<ByUrlProject><ProjectFilesPage /></ByUrlProject>} />{/* Client BOQ + Statements folders */}
 
               {/* Estimating */}
               <Route path="/estimates"    element={<EstimatesPage />} />

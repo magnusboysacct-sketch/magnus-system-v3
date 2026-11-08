@@ -7,12 +7,14 @@ import { useReportDirty, useSettingsEmbed } from "../components/settingsEmbed";
 import { Save, Percent, DollarSign, FileText, ArrowLeft, Building } from "lucide-react";
 
 type EstimateSettings = {
+  estimate_markup_enabled: boolean;     // off: new estimates have no markup (the client's own prices, e.g. Food For The Poor)
   estimate_markup_overall: number;
   estimate_markup_materials: number;
   estimate_markup_labor: number;
   estimate_markup_equipment: number;
   estimate_markup_subcontractor: number;
   estimate_contingency: number;
+  estimate_contingency_enabled: boolean;  // off: new estimates have no contingency
   estimate_validity_days: number;
   estimate_deposit_pct: number;
   estimate_progress_pct: number;
@@ -23,12 +25,14 @@ type EstimateSettings = {
 };
 
 const DEFAULTS: EstimateSettings = {
+  estimate_markup_enabled: true,
   estimate_markup_overall: 25,
   estimate_markup_materials: 20,
   estimate_markup_labor: 35,
   estimate_markup_equipment: 15,
   estimate_markup_subcontractor: 10,
   estimate_contingency: 5,
+  estimate_contingency_enabled: true,
   estimate_validity_days: 30,
   estimate_deposit_pct: 30,
   estimate_progress_pct: 40,
@@ -37,6 +41,15 @@ const DEFAULTS: EstimateSettings = {
   company_overhead_pct: 8,
   salary_period: "monthly",
 };
+
+function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-blue-600" : "bg-slate-300 dark:bg-white/[0.15]"}`}>
+      <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
 
 export default function SettingsEstimatesPage() {
   const nav = useNavigate();
@@ -126,7 +139,17 @@ export default function SettingsEstimatesPage() {
           </div>
           <p className="text-xs text-slate-400 mt-0.5">Your profit margin added to BOQ costs before presenting to client.</p>
         </div>
-        <div className="p-5 space-y-4">
+        <div className="px-5 pt-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Add markup to new estimates</div>
+            <div className="text-xs text-slate-400">{settings.estimate_markup_enabled
+              ? "On: new estimates add the markup below."
+              : "Off: new estimates use the prices as they are (no markup). Good for a client who gives you their own prices."}
+              {" "}You can still switch it on or off on each estimate.</div>
+          </div>
+          <Switch on={settings.estimate_markup_enabled} onChange={v => set("estimate_markup_enabled", v)} label="Add markup to new estimates" />
+        </div>
+        <div className={`p-5 space-y-4 ${settings.estimate_markup_enabled ? "" : "opacity-40 pointer-events-none"}`}>
           {/* Overall markup */}
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -221,7 +244,15 @@ export default function SettingsEstimatesPage() {
           </div>
           <p className="text-xs text-slate-400 mt-0.5">Buffer for unexpected costs. Shown as a separate line on client estimate.</p>
         </div>
-        <div className="p-5">
+        <div className="px-5 pt-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Add contingency to new estimates</div>
+            <div className="text-xs text-slate-400">{settings.estimate_contingency_enabled ? "On: new estimates add the contingency below." : "Off: new estimates have no contingency."}
+              {" "}You can still switch it on or off on each estimate.</div>
+          </div>
+          <Switch on={settings.estimate_contingency_enabled} onChange={v => set("estimate_contingency_enabled", v)} label="Add contingency to new estimates" />
+        </div>
+        <div className={`p-5 ${settings.estimate_contingency_enabled ? "" : "opacity-40 pointer-events-none"}`}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Contingency %</div>

@@ -12,7 +12,7 @@ import {
   Clock, CheckCircle2, AlertCircle, TrendingUp,
   TrendingDown, Building2, RefreshCw, ChevronLeft,
   Plus, X, Save, ListTodo, Trash2, Edit2, Flag,
-  Calendar, Target, Layers, Map, Copy, BookmarkPlus, LayoutTemplate
+  Calendar, Target, Layers, Map, Copy, BookmarkPlus, LayoutTemplate, FolderOpen
 } from "lucide-react";
 
 function fmtJMD(n: number) {
@@ -574,6 +574,9 @@ export default function ProjectDashboardPage() {
     {label:"Procurement",icon:<ShoppingCart size={15}/>,to:`/projects/${projectId}/procurement`,color:"text-amber-400",bg:"bg-amber-500/10",border:"border-amber-500/20",desc:"Purchase orders"},
     {label:"Finance",icon:<Wallet size={15}/>,to:`/projects/${projectId}/finance`,color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",desc:"Project finances"},
     {label:"Reports",icon:<BarChart3 size={15}/>,to:`/projects/${projectId}/reports`,color:"text-violet-400",bg:"bg-violet-500/10",border:"border-violet-500/20",desc:"Analytics"},
+    // the two folders for papers the client gives (ProjectFilesPage)
+    {label:"Client BOQ",icon:<FolderOpen size={15}/>,to:`/projects/${projectId}/files?folder=client_boq`,color:"text-sky-400",bg:"bg-sky-500/10",border:"border-sky-500/20",desc:"The client's BOQ files"},
+    {label:"Statements",icon:<FolderOpen size={15}/>,to:`/projects/${projectId}/files?folder=statement`,color:"text-lime-500",bg:"bg-lime-500/10",border:"border-lime-500/20",desc:"Payment statements"},
   ];
 
   const TABS:[{key:Tab;label:string;count?:number}] =[

@@ -43,8 +43,10 @@ type EstimateHeader = {
   updated_at: string;
   // pricing
   markup_overall?: number | null;
+  markup_enabled?: boolean | null;      // off: no markup on this estimate (the client's own prices)
   markup_type?: "overall" | "category" | null;
   contingency_pct?: number | null;
+  contingency_enabled?: boolean | null;  // off: no contingency on this estimate
   contingency_amount?: number | null;
   subtotal_cost?: number | null;
   subtotal_markup?: number | null;
@@ -77,6 +79,15 @@ type EstimateItem = {
 
 type Tab = "all" | "draft" | "sent" | "approved" | "declined";
 type ViewMode = "grid" | "list";
+
+function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-blue-600" : "bg-slate-300 dark:bg-white/[0.15]"}`}>
+      <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
 
 const STATUS_COLOR: Record<string, any> = {
   draft: "slate", sent: "blue", approved: "green", declined: "red",
@@ -224,7 +235,11 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
   // --- Pricing: markup + contingency ------------------------------------
   const [markupType, setMarkupType] = useState<"overall" | "category">(estimate.markup_type || "overall");
   const [markupOverall, setMarkupOverall] = useState<number>(estimate.markup_overall ?? 25);
+  const [markupOn, setMarkupOn] = useState<boolean>(estimate.markup_enabled !== false);
+  const markupPct = markupOn ? markupOverall : 0;          // what is really added (0 when markup is switched off)
   const [contingencyPct, setContingencyPct] = useState<number>(estimate.contingency_pct ?? 5);
+  const [contingencyOn, setContingencyOn] = useState<boolean>(estimate.contingency_enabled !== false);
+  const contPct = contingencyOn ? contingencyPct : 0;       // what is really added (0 when contingency is switched off)
   const [savingMarkup, setSavingMarkup] = useState(false);
 
   // --- Payment tracking ---------------------------------------------------
@@ -246,11 +261,13 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
       if (!companyId || estimate.markup_overall != null) return;
       const { data: cs } = await supabase
         .from("company_settings")
-        .select("estimate_markup_overall, estimate_contingency")
+        .select("estimate_markup_overall, estimate_contingency, estimate_markup_enabled, estimate_contingency_enabled")
         .eq("company_id", companyId)
         .maybeSingle();
       if (cs) {
         setMarkupOverall(cs.estimate_markup_overall ?? 25);
+        setMarkupOn(cs.estimate_markup_enabled !== false);
+        setContingencyOn(cs.estimate_contingency_enabled !== false);
         setContingencyPct(cs.estimate_contingency ?? 5);
       }
     }
@@ -270,17 +287,19 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
   }, [estimate.id, estimate.invoice_id]);
 
   const subtotalCost = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-  const markupAmount = subtotalCost * (markupOverall / 100);
+  const markupAmount = subtotalCost * (markupPct / 100);
   const subtotalWithMarkup = subtotalCost + markupAmount;
-  const contingencyAmount = subtotalWithMarkup * (contingencyPct / 100);
+  const contingencyAmount = subtotalWithMarkup * (contPct / 100);
   const totalClientPrice = subtotalWithMarkup + contingencyAmount;
 
   async function saveMarkup() {
     setSavingMarkup(true);
     await supabase.from("estimate_headers").update({
       markup_overall: markupOverall,
+      markup_enabled: markupOn,
       markup_type: markupType,
       contingency_pct: contingencyPct,
+      contingency_enabled: contingencyOn,
       contingency_amount: contingencyAmount,
       subtotal_cost: subtotalCost,
       subtotal_markup: markupAmount,
@@ -498,7 +517,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
             return groups;
           }, {})
         ).map(([cat, amt], i) => {
-          const clientAmt = (amt as number) * (1 + markupOverall / 100);
+          const clientAmt = (amt as number) * (1 + markupPct / 100);
           return `<tr><td>${i+1}</td><td><strong>${cat}</strong></td><td class="right"><strong>JMD ${clientAmt.toLocaleString(undefined,{maximumFractionDigits:0})}</strong></td></tr>`;
         }).join("")}
       </tbody>
@@ -512,8 +531,8 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
       </tr></thead>
       <tbody>
         ${items.map((item: any, i: number) => {
-          const clientRate = (Number(item.rate)||0) * (1 + markupOverall/100);
-          const clientAmt = (Number(item.amount)||0) * (1 + markupOverall/100);
+          const clientRate = (Number(item.rate)||0) * (1 + markupPct/100);
+          const clientAmt = (Number(item.amount)||0) * (1 + markupPct/100);
           return `<tr>
             <td>${i+1}</td>
             <td><strong>${item.item||""}</strong>${item.description ? "<br/><span style='color:#64748b;font-size:10px'>" + item.description + "</span>" : ""}</td>
@@ -635,6 +654,13 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
               <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(subtotalCost)}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-sm text-slate-600 dark:text-slate-400">Add markup</span>
+                {!markupOn && <div className="text-[10px] text-slate-500">Off: the client's own prices, nothing added</div>}
+              </div>
+              <Switch on={markupOn} onChange={setMarkupOn} label="Add markup" />
+            </div>
+            <div className={`flex items-center justify-between gap-3 ${markupOn ? "" : "opacity-40 pointer-events-none"}`}>
               <span className="text-sm text-slate-600 dark:text-slate-400">Markup</span>
               <div className="flex items-center gap-2">
                 <input type="number" min="0" max="200"
@@ -649,11 +675,18 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
             </div>
             <div className="border-t border-slate-100 dark:border-white/[0.06] pt-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600 dark:text-slate-400">Subtotal (with markup)</span>
+                <span className="text-slate-600 dark:text-slate-400">{markupOn ? "Subtotal (with markup)" : "Subtotal (no markup)"}</span>
                 <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(subtotalWithMarkup)}</span>
               </div>
             </div>
-            <div className="flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 rounded-lg p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-sm text-slate-600 dark:text-slate-400">Add contingency</span>
+                {!contingencyOn && <div className="text-[10px] text-slate-500">Off: no contingency added</div>}
+              </div>
+              <Switch on={contingencyOn} onChange={setContingencyOn} label="Add contingency" />
+            </div>
+            <div className={`flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 rounded-lg p-3 ${contingencyOn ? "" : "opacity-40 pointer-events-none"}`}>
               <div>
                 <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">Contingency</span>
                 <span className="text-[10px] text-amber-600 dark:text-amber-500 ml-2">shown to client</span>
@@ -818,13 +851,13 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
         {/* Footer — fixed, always visible */}
         <div className="flex-shrink-0 flex flex-wrap items-center gap-2 px-5 py-4 border-t border-slate-200 dark:border-white/[0.07] bg-white dark:bg-slate-900">
           {estimate.status === "draft" && (
-            <button onClick={() => onSend({ markupOverall, contingencyPct })}
+            <button onClick={() => onSend({ markupOverall: markupPct, contingencyPct: contPct })}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition">
               <Send size={14}/> Send to Client
             </button>
           )}
           {(estimate.status === "sent" || estimate.status === "approved") && (
-            <button onClick={() => onSend({ markupOverall, contingencyPct })}
+            <button onClick={() => onSend({ markupOverall: markupPct, contingencyPct: contPct })}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-sm font-semibold transition">
               <Send size={14}/> {isSharedNow(estimate.shared_at, estimate.withdrawn_at) ? "Sent to Client · Resend" : "Send to Client"}
             </button>
@@ -1131,8 +1164,8 @@ export default function EstimatesPage() {
         estimateId: est.id,
         client: cl,
         projectName: proj.name || est.projects?.name || "",
-        markupOverall: live?.markupOverall ?? est.markup_overall ?? 25,
-        contingencyPct: live?.contingencyPct ?? est.contingency_pct ?? 5,
+        markupOverall: live?.markupOverall ?? (est.markup_enabled === false ? 0 : est.markup_overall ?? 25),
+        contingencyPct: live?.contingencyPct ?? (est.contingency_enabled === false ? 0 : est.contingency_pct ?? 5),
       });
     } catch (e: any) {
       alert("Could not open Send to Client: " + (e?.message || "unknown error"));
