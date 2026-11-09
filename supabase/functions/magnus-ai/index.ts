@@ -205,6 +205,8 @@ Deno.serve(async (req) => {
     console.log("Magnus AI action:", body.action);
 
     const { action, imageBase64, data } = body;
+    // scan_id may also send the BACK of the ID (some Jamaican IDs carry the address / details there)
+    const imageBase64Back = action === "scan_id" && typeof body.imageBase64Back === "string" && body.imageBase64Back.length > 100 ? body.imageBase64Back : null;
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
@@ -258,7 +260,13 @@ Deno.serve(async (req) => {
               data: imageBase64,
             },
           },
-          { type: "text", text: prompt },
+          ...(imageBase64Back ? [{
+            type: "image",
+            source: { type: "base64", media_type: "image/jpeg", data: imageBase64Back },
+          }] : []),
+          { type: "text", text: imageBase64Back
+            ? `The first picture is the FRONT of the ID card and the second picture is the BACK of the same card. Read BOTH sides and combine them into one answer (the address, and sometimes other details, are often on the back).\n\n${prompt}`
+            : prompt },
         ],
       }];
 

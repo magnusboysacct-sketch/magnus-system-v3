@@ -2,13 +2,16 @@
 // AI-powered ID scanner — uses Claude Vision via Supabase Edge Function
 // Falls back to manual entry if AI unavailable
 // Crop box + zoom preview + editable fields
+// FRONT and BACK: take (or upload) a picture of each side, frame it, then one "Scan with AI" reads both together
+// (some IDs have the address on the back). The back is optional.
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Camera, Upload, ScanLine, Check, X, RefreshCw, Move, Sparkles, AlertCircle } from "lucide-react";
 import { aiScanID, type IDScanResult } from "../lib/magnusAI";
 
+type Side = "front" | "back";
 interface SimpleIDScannerProps {
-  onResult: (result: IDScanResult, croppedFile?: File) => void;
+  onResult: (result: IDScanResult, croppedFile?: File, backFile?: File) => void;
   onCancel:  () => void;
 }
 
@@ -53,6 +56,9 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
   const previewRef     = useRef<HTMLCanvasElement>(null);
 
   const [step, setStep]         = useState<"upload"|"crop"|"scanning"|"review">("upload");
+  const [side, setSide]         = useState<Side>("front");                                  // the side being framed
+  const [files, setFiles]       = useState<{ front: File | null; back: File | null }>({ front: null, back: null });
+  const [thumbs, setThumbs]     = useState<{ front: string | null; back: string | null }>({ front: null, back: null });
   const [imageSrc, setImageSrc] = useState<string|null>(null);
   const [error, setError]       = useState<string|null>(null);
   const [progress, setProgress] = useState("");
@@ -96,8 +102,10 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
   function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return; e.target.value="";
     setImageSrc(URL.createObjectURL(file));
+    setBox({ x:5, y:10, w:90, h:75 });
     setStep("crop"); setError(null);
   }
+  function pickFor(s: Side, camera: boolean) { setSide(s); (camera ? cameraInputRef : fileInputRef).current?.click(); }
 
   // ── Drag logic ────────────────────────────────────────────────────────────
 
@@ -156,14 +164,24 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
 
   // ── Scan ─────────────────────────────────────────────────────────────────
 
-  async function cropAndScan() {
+  // Keep the framed side, and go back to the two sides.
+  async function keepSide() {
     if (!imgRef.current || !containerRef.current) return;
-    setStep("scanning"); setProgress("Cropping ID area...");
     try {
       const file = await cropFile(imgRef.current, containerRef.current, box);
+      setFiles(f => ({ ...f, [side]: file }));
+      setThumbs(t => { if (t[side]) URL.revokeObjectURL(t[side]!); return { ...t, [side]: URL.createObjectURL(file) }; });
+      setImageSrc(null); setStep("upload"); setError(null);
+    } catch (e: unknown) { setError("Could not use that picture: " + (e instanceof Error ? e.message : "try again")); }
+  }
+
+  async function cropAndScan() {
+    if (!files.front) { setError("Take a picture of the FRONT of the ID first."); return; }
+    setStep("scanning"); setProgress(files.back ? "AI reading the front and the back..." : "AI reading the ID...");
+    try {
+      const file = files.front;
       lastCroppedFile.current = file;
-      setProgress("AI reading ID...");
-      const result = await aiScanID(file);
+      const result = await aiScanID(file, files.back || undefined);
 
       if (result) {
         // AI succeeded
@@ -182,7 +200,7 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
       setProgress("");
     } catch(e:any) {
       setError("Scan failed: " + e.message);
-      setStep("crop"); setProgress("");
+      setStep("upload"); setProgress("");
     }
   }
 
@@ -193,11 +211,13 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
       aiPowered,
       confidence: aiPowered ? fields.confidence : 0.8,
     };
-    onResult(result, lastCroppedFile.current || undefined);
+    onResult(result, lastCroppedFile.current || undefined, files.back || undefined);
   }
 
   function reset() {
     setImageSrc(null); setError(null); setProgress(""); setStep("upload");
+    setFiles({ front: null, back: null });
+    setThumbs(t => { if (t.front) URL.revokeObjectURL(t.front); if (t.back) URL.revokeObjectURL(t.back); return { front: null, back: null }; });
     setFields({ firstName:"", middleName:"", lastName:"", fullName:"", idNumber:"", dateOfBirth:"", expiryDate:"", address:"", documentType:"national_id", confidence:0, aiPowered:false });
   }
 
@@ -213,8 +233,8 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
         <div>
           <div className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">Magnus AI — ID Scanner</div>
           <div className="text-[10px] text-slate-600 dark:text-slate-500">
-            {step==="upload"   && "Upload or photograph the ID card."}
-            {step==="crop"     && "Drag the box tightly around the ID, then tap Scan."}
+            {step==="upload"   && "Take a picture of the FRONT, then the BACK (if the address or other details are on the back). Then tap Scan."}
+            {step==="crop"     && `Drag the box tightly around the ${side.toUpperCase()} of the ID, then tap "Use this side".`}
             {step==="scanning" && progress}
             {step==="review"   && (aiPowered ? "AI extracted these fields — correct anything wrong." : "AI unavailable — please fill in the fields manually.")}
           </div>
@@ -233,32 +253,56 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
         </div>
       )}
 
-      {/* Upload */}
+      {/* The two sides */}
       {step==="upload" && (
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={()=>cameraInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all">
-            <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-              <Camera size={20} className="text-cyan-500 dark:text-cyan-400"/>
-            </div>
-            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Take Photo</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-600">Use camera</div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {(["front","back"] as Side[]).map(sd => (
+              <div key={sd} className="rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] p-2 space-y-2">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">{sd === "front" ? "1. Front" : "2. Back (optional)"}</div>
+                {thumbs[sd] ? (
+                  <>
+                    <img src={thumbs[sd]!} alt={`${sd} of the ID`} className="w-full h-24 object-contain rounded-lg bg-black"/>
+                    <div className="flex gap-2 text-[11px]">
+                      <button onClick={()=>pickFor(sd, true)} className="font-semibold text-cyan-600 dark:text-cyan-400 underline">Retake</button>
+                      <button onClick={()=>{ setFiles(f=>({ ...f, [sd]: null })); setThumbs(t=>({ ...t, [sd]: null })); }} className="text-slate-500 underline">Remove</button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button onClick={()=>pickFor(sd, true)} className="flex flex-col items-center gap-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 py-3 hover:bg-cyan-500/20">
+                      <Camera size={18} className="text-cyan-500 dark:text-cyan-400"/><span className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">Take photo</span>
+                    </button>
+                    <button onClick={()=>pickFor(sd, false)} className="flex flex-col items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 py-3 hover:bg-emerald-500/20">
+                      <Upload size={18} className="text-emerald-500 dark:text-emerald-400"/><span className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">Upload</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <button onClick={cropAndScan} disabled={!files.front}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-gradient-to-r from-cyan-600 to-violet-600 hover:from-cyan-500 hover:to-violet-500 disabled:opacity-40 text-xs text-white font-semibold transition-all shadow-lg shadow-cyan-500/20">
+            <Sparkles size={13}/> {files.back ? "Scan front + back with AI" : "Scan with AI"}
           </button>
-          <button onClick={()=>fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all">
-            <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <Upload size={20} className="text-emerald-500 dark:text-emerald-400"/>
-            </div>
-            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Upload Photo</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-600">From gallery</div>
-          </button>
+          {files.front && !files.back && <div className="text-[10px] text-center text-slate-500">Address on the back? Add the back first, then scan.</div>}
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileInput} className="hidden"/>
           <input ref={fileInputRef}   type="file" accept="image/*" onChange={handleFileInput} className="hidden"/>
         </div>
       )}
 
+      {step==="scanning" && (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-xl bg-black/80 py-10">
+          <div className="relative w-12 h-12">
+            <div className="absolute inset-0 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"/>
+            <Sparkles size={16} className="absolute inset-0 m-auto text-cyan-400"/>
+          </div>
+          <div className="text-sm text-cyan-300 font-medium">{progress}</div>
+        </div>
+      )}
+
       {/* Crop + Scan */}
-      {(step==="crop"||step==="scanning") && imageSrc && (
+      {step==="crop" && imageSrc && (
         <div className="space-y-2">
           {/* Photo/crop viewer stays black regardless of app theme, same as a
               camera viewfinder — this isn't a themed surface. */}
@@ -304,19 +348,6 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
               </>
             )}
 
-            {step==="scanning" && (
-              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-3">
-                <div className="relative w-12 h-12">
-                  <div className="absolute inset-0 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"/>
-                  <div className="absolute inset-2 border-2 border-violet-500/20 border-b-violet-400 rounded-full animate-spin" style={{animationDirection:"reverse",animationDuration:"0.7s"}}/>
-                  <Sparkles size={16} className="absolute inset-0 m-auto text-cyan-400"/>
-                </div>
-                <div className="text-center">
-                  <div className="text-sm text-cyan-300 font-medium">{progress}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Claude Vision AI</div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Zoom preview */}
@@ -335,11 +366,11 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
 
           {step==="crop" && (
             <>
-              <p className="text-[10px] text-slate-500 dark:text-slate-600 text-center">Drag corners to resize · Drag inside to move · Frame the ID card tightly</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-600 text-center">Drag corners to resize · Drag inside to move · Frame the {side} of the ID tightly</p>
               <div className="flex gap-2">
-                <button onClick={reset} className="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">← Change</button>
-                <button onClick={cropAndScan} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gradient-to-r from-cyan-600 to-violet-600 hover:from-cyan-500 hover:to-violet-500 text-xs text-white font-semibold transition-all shadow-lg shadow-cyan-500/20">
-                  <Sparkles size={13}/> Zoom & Scan with AI
+                <button onClick={()=>{ setImageSrc(null); setStep("upload"); }} className="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">← Back</button>
+                <button onClick={keepSide} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs text-white font-semibold transition-all">
+                  <Check size={13}/> Use this side ({side})
                 </button>
               </div>
             </>
@@ -397,7 +428,7 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
           )}
 
           <div className="flex gap-2">
-            <button onClick={()=>setStep("crop")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
+            <button onClick={()=>setStep("upload")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
               <RefreshCw size={12}/> Rescan
             </button>
             <button onClick={handleUseData} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs text-white font-semibold transition-colors">

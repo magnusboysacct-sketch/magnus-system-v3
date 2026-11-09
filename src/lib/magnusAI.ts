@@ -155,9 +155,11 @@ class MagnusAIProvider {
 
   // ── Scan ID ─────────────────────────────────────────────────────────────────
 
-  async scanID(file: File): Promise<IDScanResult> {
+  // backFile: the back of the ID (some IDs have the address there); read together with the front.
+  async scanID(file: File, backFile?: File): Promise<IDScanResult> {
     const imageBase64 = await this.fileToBase64(file);
-    const data = await this.call("scan_id", { imageBase64 });
+    const imageBase64Back = backFile ? await this.fileToBase64(backFile) : undefined;
+    const data = await this.call("scan_id", imageBase64Back ? { imageBase64, imageBase64Back } : { imageBase64 });
 
     return {
       firstName:    data.firstName    || "",
@@ -304,9 +306,9 @@ export const magnusAI = new MagnusAIProvider();
 
 // ─── Safe wrappers (never throw — always return fallback) ─────────────────────
 
-export async function aiScanID(file: File): Promise<IDScanResult | null> {
+export async function aiScanID(file: File, backFile?: File): Promise<IDScanResult | null> {
   try {
-    return await magnusAI.scanID(file);
+    return await magnusAI.scanID(file, backFile);
   } catch (e: any) {
     console.warn("AI ID scan failed, falling back to manual:", e.message);
     return null; // Caller shows manual entry fields

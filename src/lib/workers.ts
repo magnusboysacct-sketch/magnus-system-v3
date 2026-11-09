@@ -8,7 +8,7 @@ export type PayType = "hourly" | "daily" | "salary" | "contract";
 // select("*") would now be refused by the database, so worker reads name their columns.
 export const WORKER_SAFE_COLUMNS =
   "id,company_id,worker_type,first_name,last_name,email,phone,address,city,parish,state,zip,hire_date,termination_date,status,pay_type,pay_rate,overtime_rate,employee_id,notes," +
-  "created_at,updated_at,created_by,id_number,id_photo_url,national_id_type,passport_photo_url,job_title,id_expiry_date";
+  "created_at,updated_at,created_by,id_number,id_photo_url,id_back_photo_url,national_id_type,passport_photo_url,job_title,id_expiry_date";
 
 export interface Worker {
   id: string;

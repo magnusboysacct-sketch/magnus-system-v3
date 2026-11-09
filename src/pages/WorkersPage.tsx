@@ -14,6 +14,7 @@ import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { IdCardBatchDownload } from "../components/IdCardDownload";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
+import FileViewer from "../components/FileViewer";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
@@ -55,6 +56,7 @@ type Worker = {
   notes?: string | null;
   id_number?: string | null;
   id_photo_url?: string | null;
+  id_back_photo_url?: string | null;      // the back of the ID card (migration 20260997000000)
   national_id_type?: string | null;
   passport_photo_url?: string | null;
   created_at?: string;
@@ -86,7 +88,7 @@ const EMPTY_FORM = {
   status: "active" as WorkerStatus,
   pay_type: "hourly" as PayType,
   pay_rate: "", overtime_rate: "", employee_id: "", notes: "",
-  id_number: "", id_photo_url: "", national_id_type: "", passport_photo_url: "",
+  id_number: "", id_photo_url: "", id_back_photo_url: "", national_id_type: "", passport_photo_url: "",
 };
 
 const DEFAULT_JOB_TITLES = [
@@ -448,11 +450,21 @@ export default function WorkersPage() {
   const [showIDScanner, setShowIDScanner] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const idPhotoFileRef = useRef<File | null>(null);
+  const idBackFileRef = useRef<File | null>(null);
+  // the ID card pictures kept with the worker: new ones (not saved yet) shown from the phone, saved ones from storage
+  const [idPreview, setIdPreview] = useState<{ front: string | null; back: string | null }>({ front: null, back: null });
+  const [idViewer, setIdViewer] = useState<{ url: string; name: string } | null>(null);
+  const idSideInput = useRef<HTMLInputElement>(null);
+  const idSideFor = useRef<"front" | "back">("back");
+  function setIdFile(side: "front" | "back", file: File | null) {
+    if (side === "front") idPhotoFileRef.current = file; else idBackFileRef.current = file;
+    setIdPreview(p => { if (p[side]) URL.revokeObjectURL(p[side]!); return { ...p, [side]: file ? URL.createObjectURL(file) : null }; });
+  }
   const passportPhotoFileRef = useRef<File | null>(null);
   const [passportPhotoPreview, setPassportPhotoPreview] = useState<string | null>(null);
   // The database holds the storage PATH of the passport photo and the ID scan; `workers` carries URLs made for showing (signed when loaded). The paths are kept here
   // so editing a worker never writes a temporary URL (or an empty value, for someone not allowed to see the scan) back over the stored path.
-  const photoRefs = useRef<Map<string, { passport: string | null; id: string | null }>>(new Map());
+  const photoRefs = useRef<Map<string, { passport: string | null; id: string | null; idBack?: string | null }>>(new Map());
   const [editPassportDisplay, setEditPassportDisplay] = useState<string | null>(null);
   const passportGalleryInputRef = useRef<HTMLInputElement>(null);
   const passportCameraInputRef = useRef<HTMLInputElement>(null);
@@ -528,8 +540,8 @@ export default function WorkersPage() {
         from += PAGE;
       }
       const { count } = await supabase.from("workers").select("id", { count: "exact", head: true }).eq("company_id", companyId!);
-      photoRefs.current = new Map(all.map((w: any) => [w.id, { passport: w.passport_photo_url || null, id: w.id_photo_url || null }]));
-      all = await withResolvedUrls(all, ["passport_photo_url", "id_photo_url"]);      // signed for showing (an ID scan only for the roles allowed to see it)
+      photoRefs.current = new Map(all.map((w: any) => [w.id, { passport: w.passport_photo_url || null, id: w.id_photo_url || null, idBack: w.id_back_photo_url || null }]));
+      all = await withResolvedUrls(all, ["passport_photo_url", "id_photo_url", "id_back_photo_url"]);      // signed for showing (an ID scan only for the roles allowed to see it)
       setWorkers(all);
       setTotalCount(count ?? null);
       return all;
@@ -537,9 +549,10 @@ export default function WorkersPage() {
     finally { setLoading(false); }
   }
 
-  async function handleIDScan(result: any, croppedFile?: File) {
+  async function handleIDScan(result: any, croppedFile?: File, backFile?: File) {
     setShowIDScanner(false);
-    if (croppedFile) { idPhotoFileRef.current = croppedFile; console.log("ID photo file received:", croppedFile.name, croppedFile.size); }
+    if (croppedFile) setIdFile("front", croppedFile);
+    if (backFile) setIdFile("back", backFile);      // the back of the card, saved next to the front
     setForm(f => ({
       ...f,
       first_name:       result.firstName || f.first_name,
@@ -592,6 +605,7 @@ export default function WorkersPage() {
         notes: form.notes.trim() || null,
         id_number: form.id_number?.trim() || null,
         id_photo_url: toStoredRef(form.id_photo_url),
+        id_back_photo_url: toStoredRef(form.id_back_photo_url),
         national_id_type: form.national_id_type?.trim() || null,
         passport_photo_url: toStoredRef(form.passport_photo_url),
       };
@@ -623,6 +637,15 @@ export default function WorkersPage() {
         } catch (upEx) {
           console.error("ID photo upload exception:", upEx);
         }
+      }
+      // ...and the back of the card, the same way
+      if (idBackFileRef.current && companyId) {
+        try {
+          const path = privatePath(companyId, "workers/ids", safeUploadName("id-back"));
+          const { error: upErr } = await supabase.storage.from("private-files")
+            .upload(path, idBackFileRef.current, { upsert: false, contentType: idBackFileRef.current.type || "image/jpeg" });
+          if (!upErr) payload.id_back_photo_url = path; else console.error("ID back upload error:", upErr);
+        } catch (upEx) { console.error("ID back upload exception:", upEx); }
       }
       // the number: assigned by the database for a new worker; changed only by a director / admin (and only when they actually changed it)
       if (editWorker && canEditWorkerNumber && form.employee_id.trim() && form.employee_id.trim() !== (editWorker.employee_id || "")) payload.employee_id = form.employee_id.trim();
@@ -676,6 +699,7 @@ export default function WorkersPage() {
       notes: worker.notes || "",
       id_number: worker.id_number || "",
       id_photo_url: refs?.id || "",
+      id_back_photo_url: refs?.idBack || "",
       national_id_type: worker.national_id_type || "",
       passport_photo_url: refs?.passport || "",
     });
@@ -683,7 +707,8 @@ export default function WorkersPage() {
   }
 
   function closeModal() {
-    idPhotoFileRef.current = null;
+    setIdFile("front", null);
+    setIdFile("back", null);
     setShowIDScanner(false);
     setShowNew(false); setEditWorker(null); setEditPassportDisplay(null);
     setForm(EMPTY_FORM); setError(null);
@@ -957,6 +982,34 @@ export default function WorkersPage() {
             </button>
           )}
 
+          {/* The ID card pictures: front and back stay with the worker; tap one to see it big */}
+          {idViewer && <FileViewer url={idViewer.url} name={idViewer.name} mime="image/jpeg" onClose={() => setIdViewer(null)}/>}
+          <input ref={idSideInput} type="file" accept="image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setIdFile(idSideFor.current, f); }}/>
+          {(() => {
+            const saved = { front: editWorker?.id_photo_url || null, back: editWorker?.id_back_photo_url || null };
+            const hasSaved = { front: !!photoRefs.current.get(editWorker?.id || "")?.id, back: !!photoRefs.current.get(editWorker?.id || "")?.idBack };
+            return (
+              <div className="grid grid-cols-2 gap-3">
+                {(["front", "back"] as const).map(side => {
+                  const url = idPreview[side] || saved[side];
+                  return (
+                    <div key={side} className="rounded-xl border border-slate-200 dark:border-white/[0.08] p-2 space-y-1.5">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">ID {side}{idPreview[side] ? " · new, saved when you save" : ""}</div>
+                      {url
+                        ? <button type="button" onClick={() => setIdViewer({ url, name: `ID ${side}.jpg` })} className="block w-full"><img src={url} alt={`ID ${side}`} className="w-full h-20 object-contain rounded-lg bg-black"/></button>
+                        : <div className="h-20 rounded-lg bg-slate-100 dark:bg-white/[0.04] flex items-center justify-center text-[10px] text-slate-500 text-center px-1">
+                            {hasSaved[side] ? "On file (only director, admin and secretary can open it)" : "No picture"}</div>}
+                      <button type="button" onClick={() => { idSideFor.current = side; idSideInput.current?.click(); }} className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 underline">
+                        {url || hasSaved[side] ? "Replace picture" : `Add the ${side}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           {/* Passport Photo Upload */}
           <div className="flex items-center gap-4 p-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
             <div className="relative flex-shrink-0">
@@ -1191,12 +1244,22 @@ export default function WorkersPage() {
               </button>
             </div>
             <div className="p-5 space-y-4">
+              {idViewer && !showNew && <FileViewer url={idViewer.url} name={idViewer.name} mime="image/jpeg" onClose={() => setIdViewer(null)}/>}
               {/* ID Photo */}
               {selectedWorker.id_photo_url ? (
                 <div>
                   <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Government ID</div>
-                  <img src={selectedWorker.id_photo_url} alt="Worker ID"
-                    className="w-full rounded-xl border border-white/[0.08] object-contain max-h-48 bg-black"/>
+                  <button type="button" onClick={() => setIdViewer({ url: selectedWorker.id_photo_url!, name: "ID front.jpg" })} className="block w-full" title="Tap to see it big">
+                    <img src={selectedWorker.id_photo_url} alt="Worker ID (front)"
+                      className="w-full rounded-xl border border-white/[0.08] object-contain max-h-48 bg-black"/>
+                  </button>
+                  {selectedWorker.id_back_photo_url && (<>
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mt-2 mb-1">Back of the ID</div>
+                    <button type="button" onClick={() => setIdViewer({ url: selectedWorker.id_back_photo_url!, name: "ID back.jpg" })} className="block w-full" title="Tap to see it big">
+                      <img src={selectedWorker.id_back_photo_url} alt="Worker ID (back)"
+                        className="w-full rounded-xl border border-white/[0.08] object-contain max-h-48 bg-black"/>
+                    </button>
+                  </>)}
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-slate-200 dark:border-white/[0.08] p-6 text-center">
