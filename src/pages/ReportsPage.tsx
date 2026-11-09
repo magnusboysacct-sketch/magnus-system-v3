@@ -3,6 +3,7 @@
 import { useParams } from "react-router-dom";
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { cashOut, getFinalSettled } from "../lib/receiptLinks";
 import {
   BarChart3, TrendingUp, Users, DollarSign, FileText,
   RefreshCw, ChevronDown, ChevronUp, Calendar, Filter,
@@ -52,6 +53,7 @@ export default function ReportsPage() {
   const { projectId: urlProjectId } = useParams();   // /projects/:projectId/reports shows that project only; /reports has its own project filter
   const [projectFilter, setProjectFilter] = useState<string>(urlProjectId || "all");
   const [payments, setPayments] = useState<any[]>([]);
+  const [settled, setSettled] = useState<Record<string,number>>({});   // advances each final payment settled (not paid twice)
   const [projects, setProjects] = useState<any[]>([]);
   const [milestones, setMilestones] = useState<any[]>([]);
 
@@ -101,6 +103,7 @@ export default function ReportsPage() {
       : {data:[] as any[]};
     const budgetByProject = new Map((fin||[]).map((f:any)=>[f.project_id, f.budget_total||0]));
     setPayments(fp||[]);
+    setSettled(await getFinalSettled(fp||[]));
     setProjects((proj||[]).map((p:any)=>({...p, budget: budgetByProject.get(p.id)||0})));
     setMilestones(ms||[]);
     setLoading(false);
@@ -109,10 +112,11 @@ export default function ReportsPage() {
   useEffect(()=>{ loadData(); },[loadData]);
 
   // ── Computed stats ──────────────────────────────────────────────────────────
-  const totalPaid = payments.reduce((s,p)=>s+(p.total_amount||0),0);
+  // Cash that really left: a final payment counts only what was handed over (its advances were already counted)
+  const totalPaid = payments.reduce((s,p)=>s+cashOut(p,settled),0);
   const totalAdvances = payments.filter(p=>p.payment_type==="advance").reduce((s,p)=>s+(p.total_amount||0),0);
   const totalWork = payments.filter(p=>p.payment_type==="payment").reduce((s,p)=>s+(p.total_amount||0),0);
-  const totalFinal = payments.filter(p=>p.payment_type==="final").reduce((s,p)=>s+(p.total_amount||0),0);
+  const totalFinal = payments.filter(p=>p.payment_type==="final").reduce((s,p)=>s+cashOut(p,settled),0);
   const uniqueWorkers = new Set(payments.map(p=>p.worker_ref)).size;
 
   // By project
@@ -124,9 +128,10 @@ export default function ReportsPage() {
       const proj = projects.find(r=>r.id===p.project_id);
       byProject[key] = {name:proj?.name||p.project_name||"No Project",total:0,advances:0,count:0,budget:proj?.budget||0};
     }
-    byProject[key].total += p.total_amount||0;
+    byProject[key].total += cashOut(p,settled);
     byProject[key].count++;
     if(p.payment_type==="advance") byProject[key].advances += p.total_amount||0;
+    if(p.payment_type==="final") byProject[key].advances -= settled[p.id]||0;   // settled advances are no longer outstanding
   });
   const projectRows = Object.values(byProject).sort((a,b)=>b.total-a.total);
 
@@ -135,11 +140,11 @@ export default function ReportsPage() {
   payments.forEach(p=>{
     const key = p.worker_ref||p.worker_name;
     if(!byWorker[key]) byWorker[key] = {name:p.worker_name,total:0,advances:0,work:0,final:0,count:0};
-    byWorker[key].total += p.total_amount||0;
+    byWorker[key].total += cashOut(p,settled);
     byWorker[key].count++;
     if(p.payment_type==="advance") byWorker[key].advances += p.total_amount||0;
     if(p.payment_type==="payment") byWorker[key].work += p.total_amount||0;
-    if(p.payment_type==="final") byWorker[key].final += p.total_amount||0;
+    if(p.payment_type==="final") byWorker[key].final += cashOut(p,settled);
   });
   const workerRows = Object.values(byWorker).sort((a,b)=>b.total-a.total);
 
@@ -154,7 +159,7 @@ export default function ReportsPage() {
       const proj = projects.find(r=>r.id===p.project_id);
       byMilestone[key] = {name:p.milestone_name,project:proj?.name||p.project_name||"",total:0,planned:ms?.planned_cost||0,count:0};
     }
-    byMilestone[key].total += p.total_amount||0;
+    byMilestone[key].total += cashOut(p,settled);
     byMilestone[key].count++;
   });
   const milestoneRows = Object.values(byMilestone).sort((a,b)=>b.total-a.total);
@@ -165,7 +170,7 @@ export default function ReportsPage() {
     if(!p.task_name) return;
     const key = `${p.project_id||""}|${p.milestone_name||""}|${p.task_name}`;
     if(!byTask[key]) byTask[key] = {name:p.task_name,milestone:p.milestone_name||"",total:0,count:0};
-    byTask[key].total += p.total_amount||0;
+    byTask[key].total += cashOut(p,settled);
     byTask[key].count++;
   });
   const taskRows = Object.values(byTask).sort((a,b)=>b.total-a.total);

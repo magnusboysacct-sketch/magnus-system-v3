@@ -2,6 +2,7 @@
 // Admin/Director only — print company worker IDs and field worker file sheets
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { cashOut, getFinalSettled } from "../lib/receiptLinks";
 import { showPrintPreview } from "../lib/printPreview";
 import { useNavigate } from "react-router-dom";
 import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard, Camera, X } from "lucide-react";
@@ -118,6 +119,7 @@ export default function SettingsRecordsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const w = await withResolvedUrls((w0||[]) as any[], ["passport_photo_url","id_photo_url"]);
       const fp = await withResolvedUrls(fp0||[], ["id_photo_url"]);
+      const settled = await getFinalSettled(fp0||[]);     // a final payment's settled advances are not counted twice
       setCompanyWorkers(w||[]);
       setFieldPayments(fp||[]);
       // Group field payments by worker_ref
@@ -132,7 +134,7 @@ export default function SettingsRecordsPage() {
           };
         }
         workerMap[key].payments.push(p);
-        workerMap[key].total += p.total_amount||0;
+        workerMap[key].total += cashOut(p,settled);
         if(p.payment_type==="advance") workerMap[key].advances += p.total_amount||0;
         if(p.id_photo_url && !workerMap[key].id_photo_url) workerMap[key].id_photo_url = p.id_photo_url;
       });

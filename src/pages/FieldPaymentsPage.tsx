@@ -9,7 +9,7 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
 import { buildPrintDocument } from "../lib/printUtils";
-import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
+import { cashOut, copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getFinalSettled, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 import { showPrintPreview } from "../lib/printPreview";
 import html2canvas from "html2canvas";
 import {
@@ -71,6 +71,7 @@ function fmtDate(d: string) {
 export default function FieldPaymentsPage() {
   const { projects } = useProjectContext();
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [settled, setSettled] = useState<Record<string,number>>({});   // advances each final payment settled
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -139,6 +140,7 @@ export default function FieldPaymentsPage() {
       if(error)throw error;
       // ID scans are stored as paths; made into short-lived signed URLs for showing (an ID scan only for the roles allowed to open it)
       setPayments(await withResolvedUrls((data||[]) as Payment[], ["id_photo_url", "signature_url"]));
+      setSettled(await getFinalSettled((data||[]) as Payment[]));
     } catch(e){console.error(e);}
     setLoading(false);
   }
@@ -167,7 +169,7 @@ export default function FieldPaymentsPage() {
   });
 
   const stats = {
-    totalPaid: payments.reduce((s,p)=>s+(p.total_amount||0),0),
+    totalPaid: payments.reduce((s,p)=>s+cashOut(p,settled),0),   // a final payment counts only the cash handed over
     totalAdvances: payments.filter(p=>p.payment_type==="advance").reduce((s,p)=>s+(p.total_amount||0),0),
     workers: new Set(payments.map(p=>p.worker_name)).size,
     total: payments.length,

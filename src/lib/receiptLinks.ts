@@ -85,6 +85,22 @@ export async function getAdvancesSoFar(s: AdvancesScope): Promise<number> {
   return Number(data) || 0;
 }
 
+// What each FINAL payment settled from earlier advances (field_payment_final_advances, migration 20261000000000).
+// Totals use cashOut: the cash that really left = earned − the advances it settled (those were already counted as advances).
+// If the function is not there yet, the old totals show (nothing breaks).
+export async function getFinalSettled(rows: { id: string; payment_type?: string | null }[]): Promise<Record<string, number>> {
+  const ids = rows.filter((r) => r.payment_type === "final").map((r) => r.id);
+  const out: Record<string, number> = {};
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase.rpc("field_payment_final_advances", { p_ids: ids.slice(i, i + 200) });
+    if (error) return out;
+    ((data || []) as { id: string; advances: number | string }[]).forEach((r) => { out[r.id] = Number(r.advances) || 0; });
+  }
+  return out;
+}
+export const cashOut = (p: { id: string; payment_type?: string | null; total_amount?: number | string | null }, settled: Record<string, number>) =>
+  (Number(p.total_amount) || 0) - (p.payment_type === "final" ? settled[p.id] || 0 : 0);
+
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
