@@ -38,7 +38,7 @@ export default function AttendancePage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, Check[]>>({});
-  const [modal, setModal] = useState<"crew" | "site" | "manual" | null>(null);
+  const [modal, setModal] = useState<"crew" | "site" | "manual" | "out" | null>(null);
   const [editing, setEditing] = useState<StaffShift | null>(null);      // a supervisor changing a finished shift's times
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -146,6 +146,7 @@ export default function AttendancePage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {canAct && <button onClick={() => setModal("crew")} className={`${btn} bg-green-600 hover:bg-green-500 text-white`}>▶ Clock in crew</button>}
+          {canAct && stats.onSite > 1 && <button onClick={() => setModal("out")} className={`${btn} bg-red-600 hover:bg-red-500 text-white`}>⏹ Clock out several</button>}
           {APPROVE_ROLES.includes(role) && <button onClick={() => setModal("manual")} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>✍️ Add time by hand</button>}
           {canAct && <button onClick={() => setModal("site")} className={`${btn} bg-blue-600 hover:bg-blue-500 text-white`}>📍 Set site location</button>}
           <button onClick={reload} className={`${btn} border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300`}>Refresh</button>
@@ -260,6 +261,8 @@ export default function AttendancePage() {
         onSaved={(t) => { setModal(null); setEditing(null); setMsg({ ok: true, text: t }); reload(); }} />}
       {modal === "crew" && companyId && <CrewModal companyId={companyId} projects={projects} workers={workers} busyIds={shifts.filter((s) => s.status === "open").map((s) => s.worker_id)}
         onClose={() => { setModal(null); reload(); }} />}
+      {modal === "out" && <OutModal shifts={shifts.filter((s) => s.status === "open")}
+        onClose={(t) => { setModal(null); if (t) setMsg({ ok: true, text: t }); reload(); }} />}
       {modal === "site" && <SiteModal projects={projects} onClose={() => { setModal(null); reload(); }} />}
     </div>
   );
@@ -285,8 +288,27 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
   const [done, setDone] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [many, setMany] = useState(false);             // "Several at once": tick the crew, one tap clocks them all in
+  const [picked, setPicked] = useState<string[]>([]);
   const taken = new Set([...busyIds, ...done]);
   const left = workers.filter((w) => !taken.has(w.id));
+
+  async function goMany() {
+    const ids = picked.filter((id) => !taken.has(id));
+    if (!projectId || ids.length === 0) { setErr("Pick the project and tick the workers."); return; }
+    setErr(null);
+    setBusy("Finding where you are…");
+    const fix = await getFix();
+    const ok: string[] = [], bad: string[] = [];
+    let far: number | null | undefined = null;
+    for (const [i, id] of ids.entries()) {
+      setBusy(`Clocking in ${i + 1} of ${ids.length}…`);
+      try { const r = await staffClockIn(id, projectId, fix, null); ok.push(id); if (r.status === "off_site") far = r.distance_m; }
+      catch (e) { bad.push(`${wname(workers.find((w) => w.id === id) || null)}: ${e instanceof Error ? e.message : "could not clock in"}`); }
+    }
+    setDone((d) => [...d, ...ok]); setPicked([]); setBusy(null);
+    setErr([bad.length ? `Not clocked in: ${bad.join("; ")}` : "", far != null ? `Your phone is ${distanceWords(far)} from the site, so they are marked "away from site".` : ""].filter(Boolean).join(" ") || null);
+  }
 
   async function go(file: File | null) {
     if (!projectId || !workerId) { setErr("Pick the project and the worker."); return; }
@@ -314,18 +336,97 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
         <option value="">Pick the project…</option>
         {open.map((p) => <option key={p.id} value={p.id}>{p.name}{p.site_lat == null ? " (site location not set)" : ""}</option>)}
       </select>
+      <OneOrMany many={many} setMany={(m) => { setMany(m); setErr(null); }} />
+      {many ? <PickMany list={left} picked={picked} setPicked={setPicked} /> : (
       <select value={workerId} onChange={(e) => setWorkerId(e.target.value)} className={`${input} w-full`}>
         <option value="">Pick the worker…</option>
         {left.map((w) => <option key={w.id} value={w.id}>{wname(w)}{w.employee_id ? ` · ${w.employee_id}` : ""}</option>)}
-      </select>
+      </select>)}
       {err && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</div>}
-      {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : (<>
+      {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : many ? (
+        <button onClick={() => void goMany()} disabled={picked.length === 0}
+          className={`${btn} w-full min-h-[56px] bg-green-600 hover:bg-green-500 text-white text-base`}>▶ Clock in {picked.length || ""} {picked.length === 1 ? "worker" : "workers"} now</button>
+      ) : (<>
         <button onClick={() => { if (!projectId || !workerId) { setErr("Pick the project and the worker."); return; } fileRef.current?.click(); }}
           className={`${btn} w-full min-h-[56px] bg-green-600 hover:bg-green-500 text-white text-base`}>📷 Take their photo and clock in</button>
         <button onClick={() => void go(null)} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Clock in without a photo</button>
       </>)}
       {done.length > 0 && <div className="text-sm text-green-700">✅ Clocked in: {done.map((id) => wname(workers.find((w) => w.id === id) || null)).join(", ")}</div>}
       <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Done</button>
+    </Shell>
+  );
+}
+
+// "One worker" / "Several at once" switch used by Clock in crew and Add time by hand
+function OneOrMany({ many, setMany }: { many: boolean; setMany: (m: boolean) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 dark:bg-white/[0.05] p-1">
+      {([[false, "One worker"], [true, "Several at once"]] as const).map(([v, l]) => (
+        <button key={l} type="button" onClick={() => setMany(v)}
+          className={`rounded-md py-2 text-sm font-semibold ${many === v ? "bg-white dark:bg-[#111820] text-slate-900 dark:text-slate-100 shadow" : "text-slate-500"}`}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+// Tick boxes for the crew, with "Tick all" and a name search
+function PickMany({ list, picked, setPicked }: { list: Wkr[]; picked: string[]; setPicked: (ids: string[]) => void }) {
+  const [find, setFind] = useState("");
+  const shown = list.filter((w) => !find.trim() || `${wname(w)} ${w.employee_id || ""}`.toLowerCase().includes(find.trim().toLowerCase()));
+  const all = shown.length > 0 && shown.every((w) => picked.includes(w.id));
+  const flip = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
+  if (list.length === 0) return <div className="text-sm text-slate-500">Everybody is already clocked in.</div>;
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        {list.length > 8 && <input value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find a name…" className={`${input} min-w-0 flex-1`} />}
+        <button type="button" onClick={() => setPicked(all ? picked.filter((id) => !shown.some((w) => w.id === id)) : [...new Set([...picked, ...shown.map((w) => w.id)])])}
+          className={`${btn} border border-slate-300 text-slate-700 dark:text-slate-300 ${list.length > 8 ? "" : "w-full"}`}>{all ? "Untick all" : "Tick all"}</button>
+      </div>
+      <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/[0.1] divide-y divide-slate-100 dark:divide-white/[0.05]">
+        {shown.map((w) => (
+          <label key={w.id} className="flex min-h-[44px] cursor-pointer items-center gap-3 px-3 text-sm text-slate-800 dark:text-slate-200">
+            <input type="checkbox" checked={picked.includes(w.id)} onChange={() => flip(w.id)} className="h-5 w-5" />
+            <span className="flex-1">{wname(w)}</span>
+            {w.employee_id && <span className="font-mono text-xs text-slate-500">{w.employee_id}</span>}
+          </label>
+        ))}
+      </div>
+      <div className="text-xs text-slate-500">{picked.length} ticked</div>
+    </div>
+  );
+}
+
+// Clock out several people in one go (end of the day)
+function OutModal({ shifts, onClose }: { shifts: StaffShift[]; onClose: (done?: string) => void }) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const people: Wkr[] = shifts.map((s) => ({ id: s.id, first_name: s.workers?.first_name ?? null, last_name: s.workers?.last_name ?? null, employee_id: s.workers?.employee_id ?? null }));
+  async function go() {
+    if (picked.length === 0) { setErr("Tick the workers to clock out."); return; }
+    setErr(null); setBusy("Finding where you are…");
+    const fix = await getFix();
+    let ok = 0; const bad: string[] = [];
+    for (const [i, id] of picked.entries()) {
+      setBusy(`Clocking out ${i + 1} of ${picked.length}…`);
+      try { await staffClockOut(id, fix, "Clocked out by supervisor"); ok++; }
+      catch (e) { bad.push(`${wname(people.find((w) => w.id === id) || null)}: ${e instanceof Error ? e.message : "could not clock out"}`); }
+    }
+    setBusy(null);
+    if (bad.length) { setErr(`Clocked out ${ok}. Not clocked out: ${bad.join("; ")}`); setPicked([]); return; }
+    onClose(`${ok} ${ok === 1 ? "worker is" : "workers are"} clocked out.`);
+  }
+  return (
+    <Shell title="Clock out several" onClose={() => onClose()}>
+      <p className="text-sm text-slate-600 dark:text-slate-400">Tick who is going home, then tap the red button. Everyone ticked is clocked out now, with your phone's location.</p>
+      <PickMany list={people} picked={picked} setPicked={setPicked} />
+      {err && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</div>}
+      {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : (
+        <button onClick={() => void go()} disabled={picked.length === 0}
+          className={`${btn} w-full min-h-[56px] bg-red-600 hover:bg-red-500 text-white text-base`}>⏹ Clock out {picked.length || ""} {picked.length === 1 ? "worker" : "workers"} now</button>
+      )}
+      <button onClick={() => onClose()} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
     </Shell>
   );
 }
@@ -640,13 +741,25 @@ function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [many, setMany] = useState(false);             // add the same day and times for several workers
+  const [picked, setPicked] = useState<string[]>([]);
   const mins = (() => { const [a, b] = tin.split(":").map(Number), [c, d] = tout.split(":").map(Number); return (c * 60 + d) - (a * 60 + b); })();
   async function save() {
     setErr(null);
-    if (!workerId || !projectId || !date || !tin || !tout) { setErr("Pick the worker, the project, the day and both times."); return; }
+    if ((many && !shift ? picked.length === 0 : !workerId) || !projectId || !date || !tin || !tout) { setErr("Pick the worker, the project, the day and both times."); return; }
     if (mins <= 0) { setErr("The time out must be after the time in (same day)."); return; }
     if (!note.trim()) { setErr(shift ? "Say why the time is changed." : "Say why the time is entered by hand (for example: forgot to clock in)."); return; }
     setBusy(true);
+    if (many && !shift) {
+      const ok: string[] = [], bad: string[] = [];
+      for (const id of picked) {
+        try { await manualShift(id, projectId, jaTime(date, tin), jaTime(date, tout), note.trim()); ok.push(id); }
+        catch (e) { bad.push(`${wname(workers.find((w) => w.id === id) || null)}: ${e instanceof Error ? e.message : "could not save"}`); }
+      }
+      if (bad.length) { setPicked(picked.filter((id) => !ok.includes(id))); setErr(`Added for ${ok.length}. Not added: ${bad.join("; ")}`); setBusy(false); return; }
+      onSaved(`Time added for ${ok.length} ${ok.length === 1 ? "worker" : "workers"}. It waits for approval like any other day.`);
+      return;
+    }
     try {
       if (shift) await editShift(shift.id, projectId, jaTime(date, tin), jaTime(date, tout), note.trim());
       else await manualShift(workerId, projectId, jaTime(date, tin), jaTime(date, tout), note.trim());
@@ -656,7 +769,9 @@ function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
   return (
     <Shell title={shift ? `Change times: ${wname(shift.workers)}` : "Add time by hand"} onClose={onClose}>
       <p className="text-sm text-slate-600 dark:text-slate-400">{shift ? "Fix the day, the times or the project. The reason is kept with the shift." : "For a day the worker did not clock in (today or any day before). It is marked \"entered by hand\"."}</p>
-      {!shift && (
+      {!shift && <OneOrMany many={many} setMany={setMany} />}
+      {!shift && many && <PickMany list={workers} picked={picked} setPicked={setPicked} />}
+      {!shift && !many && (
         <select value={workerId} onChange={(e) => setWorkerId(e.target.value)} className={`${input} w-full`}>
           <option value="">Pick the worker…</option>
           {workers.map((w) => <option key={w.id} value={w.id}>{wname(w)}{w.employee_id ? ` · ${w.employee_id}` : ""}</option>)}
@@ -674,7 +789,7 @@ function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
       {mins > 0 && <div className="text-sm text-slate-700 dark:text-slate-300">= <b>{hoursWords(mins)}</b></div>}
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={shift ? "Why? e.g. clocked out late by mistake" : "Why? e.g. forgot to clock in, no phone"} className={`${input} w-full`} />
       {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
-      <button onClick={() => void save()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Saving…" : shift ? "Save the change" : "Add the time"}</button>
+      <button onClick={() => void save()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Saving…" : shift ? "Save the change" : many ? `Add the time for ${picked.length} ${picked.length === 1 ? "worker" : "workers"}` : "Add the time"}</button>
       <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
     </Shell>
   );
