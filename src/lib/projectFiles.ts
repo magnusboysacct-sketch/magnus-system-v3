@@ -52,6 +52,12 @@ export async function addProjectFile(o: { companyId: string; projectId: string; 
   if (error) { await supabase.storage.from("private-files").remove([path]); throw new Error(`${o.file.name}: ${error.message}`); }
 }
 
+export async function projectFileLink(f: ProjectFile): Promise<string> {
+  const { data, error } = await supabase.storage.from("private-files").createSignedUrl(f.file_path, 3600);
+  if (error || !data?.signedUrl) throw new Error(`Could not open the file${error?.message ? ` (${error.message})` : ""}.`);
+  return data.signedUrl;
+}
+
 export async function openProjectFile(f: ProjectFile, download = false): Promise<void> {
   await openLater(async () => {
     const { data, error } = await supabase.storage.from("private-files").createSignedUrl(f.file_path, 300, download ? { download: f.file_name } : undefined);

@@ -8,6 +8,8 @@ import {
   sizeWords, updateDoc, type DocFile, type Drawer,
 } from "../lib/filingCabinet";
 import { RENEW_MS, downloadLink, fileLinks } from "../lib/fileLinks";
+import FileViewer from "../components/FileViewer";
+import { docLink } from "../lib/filingCabinet";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -148,6 +150,12 @@ export default function DocumentsPage() {
 
   // ── one document ───────────────────────────────────────────────────────────────────────────────────────
   async function open(f: DocFile, download = false) { try { await openDoc(f, download); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not open." }); } }
+  // Open = the in-app viewer (same on phone, tablet and computer; Word / Excel / PDF are shown, not downloaded)
+  const [viewer, setViewer] = useState<{ url: string; name: string; mime: string | null } | null>(null);
+  async function view(f: DocFile) {
+    try { setViewer({ url: links[f.file_path] || await docLink(f), name: f.file_name, mime: f.mime_type }); }
+    catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not open." }); }
+  }
   async function remove(f: DocFile) {
     if (!window.confirm(`Remove "${f.title}"? The file is deleted.`)) return;
     try { await removeDoc(f); setMsg({ ok: true, text: "Removed." }); reload(); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not remove." }); }
@@ -227,18 +235,14 @@ export default function DocumentsPage() {
                 <div key={f.id} className={`${card} p-3 flex flex-wrap items-center gap-3`}>
                   <div className="text-2xl">{docIcon(f.mime_type)}</div>
                   <div className="min-w-0 flex-1">
-                    {links[f.file_path]
-                      ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-words">{f.title}</a>
-                      : <button onClick={() => void open(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-words">{f.title}</button>}
+                    <button onClick={() => void view(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-words">{f.title}</button>
                     <div className="text-xs text-slate-500 break-all">
                       {f.doc_date ? `${day(f.doc_date)} · ` : ""}{where === ALL ? `🗂️ ${drawerName(f.drawer_id)} · ` : ""}{f.project_id ? `🏗️ ${projName(f.project_id)} · ` : ""}{f.is_private ? "🔒 · " : ""}{f.file_name} · {sizeWords(f.size_bytes)}
                     </div>
                     {f.note && <div className="text-xs text-slate-600 dark:text-slate-400">{f.note}</div>}
                   </div>
                   <div className="flex gap-3 text-xs font-semibold">
-                    {links[f.file_path]
-                      ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-blue-700 dark:text-blue-400 underline">Open</a>
-                      : <button onClick={() => void open(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>}
+                    <button onClick={() => void view(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>
                     {links[f.file_path]
                       ? <a href={downloadLink(links[f.file_path], f.file_name)} download={f.file_name} className="text-slate-600 dark:text-slate-300 underline">Download</a>
                       : <button onClick={() => void open(f, true)} className="text-slate-600 dark:text-slate-300 underline">Download</button>}
@@ -252,6 +256,7 @@ export default function DocumentsPage() {
         </div>
       </div>
 
+      {viewer && <FileViewer url={viewer.url} name={viewer.name} mime={viewer.mime} downloadUrl={downloadLink(viewer.url, viewer.name)} onClose={() => setViewer(null)} />}
       {editing && <EditDoc doc={editing} drawers={drawers} projects={projects} onClose={() => setEditing(null)}
         onSaved={(t) => { setEditing(null); setMsg({ ok: true, text: t }); reload(); }} onError={(t) => setMsg({ ok: false, text: t })} />}
     </div>

@@ -9,6 +9,8 @@ import {
   type FileFolder, type ProjectFile,
 } from "../lib/projectFiles";
 import { RENEW_MS, downloadLink, fileLinks } from "../lib/fileLinks";
+import FileViewer from "../components/FileViewer";
+import { projectFileLink } from "../lib/projectFiles";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -113,6 +115,12 @@ export default function ProjectFilesPage() {
     reload();
   }
 
+  // Open = the in-app viewer (same on phone, tablet and computer)
+  const [viewer, setViewer] = useState<{ url: string; name: string; mime: string | null } | null>(null);
+  async function view(f: ProjectFile) {
+    try { setViewer({ url: links[f.file_path] || await projectFileLink(f), name: f.file_name, mime: f.mime_type }); }
+    catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not open." }); }
+  }
   async function open(f: ProjectFile, download = false) {
     try { await openProjectFile(f, download); } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not open." }); }
   }
@@ -202,17 +210,13 @@ export default function ProjectFilesPage() {
               <div key={f.id} className={`${card} p-3 flex flex-wrap items-center gap-3`}>
                 <div className="text-2xl">{icon(f)}</div>
                 <div className="min-w-0 flex-1">
-                  {links[f.file_path]
-                    ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-all">{f.file_name}</a>
-                    : <button onClick={() => void open(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-all">{f.file_name}</button>}
+                  <button onClick={() => void view(f)} className="text-left font-semibold text-blue-700 dark:text-blue-400 hover:underline break-all">{f.file_name}</button>
                   <div className="text-xs text-slate-500">
                     {f.doc_date ? day(f.doc_date) : "No date"}{f.amount != null ? ` · ${money(Number(f.amount))}` : ""}{f.note ? ` · ${f.note}` : ""} · {kb(f.size_bytes)}
                   </div>
                 </div>
                 <div className="flex gap-3 text-xs font-semibold">
-                  {links[f.file_path]
-                    ? <a href={links[f.file_path]} target="_blank" rel="noopener noreferrer" className="text-blue-700 dark:text-blue-400 underline">Open</a>
-                    : <button onClick={() => void open(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>}
+                  <button onClick={() => void view(f)} className="text-blue-700 dark:text-blue-400 underline">Open</button>
                   {links[f.file_path]
                     ? <a href={downloadLink(links[f.file_path], f.file_name)} download={f.file_name} className="text-slate-600 dark:text-slate-300 underline">Download</a>
                     : <button onClick={() => void open(f, true)} className="text-slate-600 dark:text-slate-300 underline">Download</button>}
@@ -224,6 +228,7 @@ export default function ProjectFilesPage() {
           </div>
         )}
       </>)}
+      {viewer && <FileViewer url={viewer.url} name={viewer.name} mime={viewer.mime} downloadUrl={downloadLink(viewer.url, viewer.name)} onClose={() => setViewer(null)} />}
     </div>
   );
 }
