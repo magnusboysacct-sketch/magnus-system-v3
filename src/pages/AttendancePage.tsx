@@ -369,6 +369,7 @@ function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => voi
   async function savePasted() {
     if (!projectId) { setNote({ ok: false, text: "Pick the project." }); return; }
     const pt = parsePoint(pasted);
+    if (!pt && /goo\.gl|g\.co\//i.test(pasted)) { setNote({ ok: false, text: 'NOT SAVED: that short Google Maps link has no numbers in it. In Google Maps, right-click (or press and hold) the exact spot, click the numbers at the top (like 18.1234, -77.5678) to copy them, and paste those here.' }); return; }
     if (!pt) { setNote({ ok: false, text: 'That is not a map point. In Google Maps, press and hold on the site, copy the numbers that show (like 18.1234, -77.5678), and paste them here.' }); return; }
     setBusy(true); setNote(null);
     try { await setSite(projectId, pt, radius); setSavedPoint({ lat: pt.lat, lng: pt.lng }); setNote({ ok: true, text: `Saved. Workers within ${distanceWords(radius)} of that point are "on site".` }); }
