@@ -346,7 +346,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     setForm(f=>({...f,task_id:taskId,task_name:task.task_name||"",trade_type:task.trade_type||"",unit:task.unit||"",task_unit_rate:String(task.rate_per_unit||""),task_quantity:String(task.quantity||"")}));
   }
 
-  // Auto-calculate total
+  // Auto-calculate total. Also runs again whenever the total is cleared (picking the project or task clears it after the
+  // days / rate were already filled, e.g. from Clock In), so the green total always shows. A total typed by hand is kept.
+  const totalEmpty=form.total_amount==="";
   useEffect(()=>{
     if(form.payment_type==="advance")return; // advance entered manually
     if(form.rate_type==="task"){
@@ -362,7 +364,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       const rate=parseFloat(form.rate_per_hour)||0;
       if(hrs>0&&rate>0)setForm(f=>({...f,total_amount:(hrs*rate).toFixed(2)}));
     }
-  },[form.task_quantity,form.task_unit_rate,form.days_worked,form.rate_per_day,form.hours_worked,form.rate_per_hour,form.rate_type,form.payment_type]);
+  },[form.task_quantity,form.task_unit_rate,form.days_worked,form.rate_per_day,form.hours_worked,form.rate_per_hour,form.rate_type,form.payment_type,totalEmpty]);
 
   function handleIDScanResult(ocr:any, photoFile?: File) {
     const name=[ocr.firstName,ocr.middleName,ocr.lastName].filter(Boolean).join(" ");
