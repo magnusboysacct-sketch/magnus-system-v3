@@ -369,6 +369,25 @@ export interface FromClock {
   worker: { id: string; name: string; id_number: string; phone: string };
 }
 
+// A worker's finished clocked time not paid yet (Field Payments fills the pay from it). Approved days can be paid;
+// "waiting" are days still waiting for a supervisor in Clock In → Approve & pay.
+export interface UnpaidClock { approved: { id: string; project_id: string | null; work_date: string; approved_minutes: number | null; minutes_worked: number | null }[]; waiting: number; payType: string | null; payRate: number | null }
+export async function fetchUnpaidClock(workerId: string, projectId?: string | null): Promise<UnpaidClock> {
+  let q = supabase.from("attendance_shifts")
+    .select("id, project_id, work_date, approved_minutes, minutes_worked, approval, workers(pay_type, pay_rate)")
+    .eq("worker_id", workerId).eq("status", "closed").is("field_payment_id", null).in("approval", ["approved", "pending"])
+    .order("work_date", { ascending: true });
+  if (projectId) q = q.eq("project_id", projectId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  const rows = (data || []) as unknown as { id: string; project_id: string | null; work_date: string; approved_minutes: number | null; minutes_worked: number | null; approval: string; workers: { pay_type: string | null; pay_rate: number | null } | null }[];
+  return {
+    approved: rows.filter((r) => r.approval === "approved"),
+    waiting: rows.filter((r) => r.approval === "pending").length,
+    payType: rows[0]?.workers?.pay_type ?? null, payRate: rows[0]?.workers?.pay_rate ?? null,
+  };
+}
+
 // ── a supervisor puts in / changes / deletes time (migration 20260999000000). Workers' own clock always uses the real time. ──
 // A Jamaica day + "HH:MM" as an exact time.
 export const jaTime = (day: string, hm: string) => new Date(`${day}T${hm}:00-05:00`).toISOString();

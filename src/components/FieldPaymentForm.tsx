@@ -17,7 +17,7 @@ import {
   ListTodo, TrendingUp, CreditCard, Flag
 } from "lucide-react";
 import { cn } from "../components/ui";
-import type { FromClock } from "../lib/attendance";
+import { fetchUnpaidClock, workOutPay, type FromClock } from "../lib/attendance";
 
 // Payment type determines the flow
 type PaymentType = "advance"|"progress"|"final"|"payment";
@@ -160,6 +160,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectBalance, setProjectBalance] = useState<number|null>(null);
 
+  // Clocked time used for this payment (from Clock In → Approve & pay, or found when the worker is picked). Those shifts are marked paid on save.
+  const [clock, setClock] = useState<FromClock|null>(prefillWorker?.fromClock||null);
+  const [clockFound, setClockFound] = useState<{key:string;use:FromClock|null;waiting:number;off:boolean}|null>(null);
   const [form, setForm] = useState<FormData>({
     payment_type:(prefillWorker?.payment_type as PaymentType)||"payment",
     worker_name:prefillWorker?.name||"", worker_id_number:prefillWorker?.id_number||"", worker_phone:prefillWorker?.phone||"",
@@ -225,6 +228,43 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   function typeWorkerName(name:string){
     // editing the name of a picked worker means it is someone else: drop the link
     setForm(f=>{const w=workerList.find(x=>x.id===f.worker_id);return {...f,worker_name:name,worker_id:w&&`${w.first_name} ${w.last_name}`.trim()===name.trim()?f.worker_id:""};});
+  }
+
+  // A registered worker with approved clocked time not paid yet: fill "By Day"/"By Hour", days or hours and their rate from it
+  // (all can still be changed). Only for a work / final payment, and not when the payment already came from Clock In.
+  const clockKey=[form.worker_id,form.project_id,form.payment_type].join("|");
+  useEffect(()=>{
+    if(prefillWorker?.fromClock||!form.worker_id||(form.payment_type!=="payment"&&form.payment_type!=="final"))return;
+    let alive=true;
+    fetchUnpaidClock(form.worker_id,form.project_id||null).then(r=>{
+      if(!alive)return;
+      let use:FromClock|null=null;
+      if(r.approved.length){
+        const p=workOutPay(r.approved,r.payType,r.payRate);
+        const projs=[...new Set(r.approved.map(s=>s.project_id))];
+        use={shift_ids:r.approved.map(s=>s.id),project_id:projs.length===1?projs[0]:null,rate_type:p.rateType,hours_worked:p.hours,days_worked:p.days,rate:p.rate,
+          notes:`Clocked time ${p.dates[0]}${p.dates.length>1?` to ${p.dates[p.dates.length-1]}`:""}: ${p.rateType==="day"?`${p.days} day${p.days===1?"":"s"}`:`${p.hours} hours`}`,
+          worker:{id:form.worker_id,name:form.worker_name,id_number:form.worker_id_number,phone:form.worker_phone}};
+      }
+      setClockFound({key:clockKey,use,waiting:r.waiting,off:false});
+      if(use)applyClock(use); else setClock(null);
+    }).catch(()=>{ if(alive)setClockFound(null); });
+    return ()=>{alive=false;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[clockKey]);
+  function applyClock(c:FromClock){
+    setClock(c);
+    setForm(f=>({...f,rate_type:c.rate_type,project_id:f.project_id||c.project_id||"",
+      days_worked:c.rate_type==="day"?String(c.days_worked):f.days_worked,
+      hours_worked:c.rate_type==="hour"?String(c.hours_worked):f.hours_worked,
+      rate_per_day:c.rate_type==="day"&&c.rate?String(c.rate):f.rate_per_day,
+      rate_per_hour:c.rate_type==="hour"&&c.rate?String(c.rate):f.rate_per_hour,
+      notes:f.notes&&f.notes!==clock?.notes?f.notes:c.notes,total_amount:""}));
+  }
+  function dropClock(){
+    setClock(null);
+    setClockFound(cf=>cf?{...cf,off:true}:cf);
+    setForm(f=>({...f,notes:f.notes===clock?.notes?"":f.notes}));
   }
 
   // Load worker advance history when worker ID confirmed
@@ -394,8 +434,8 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       setSavedPaymentId(payment.id);
 
       // paid from clocked time: link those shifts to this payment so they can't be paid twice
-      if(prefillWorker?.fromClock?.shift_ids.length){
-        const {error:me}=await supabase.rpc("attendance_mark_paid",{p_shift_ids:prefillWorker.fromClock.shift_ids,p_payment_id:payment.id});
+      if(clock?.shift_ids.length){
+        const {error:me}=await supabase.rpc("attendance_mark_paid",{p_shift_ids:clock.shift_ids,p_payment_id:payment.id});
         if(me)setLinkNote(`Payment saved, but the clocked time was not marked as paid: ${me.message}`);
       }
 
@@ -750,6 +790,24 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
               {/* WORK PAYMENT / FINAL — enter work details */}
               {(form.payment_type==="payment"||form.payment_type==="final")&&(
                 <>
+                  {clock&&(
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-300 space-y-1">
+                      <div className="font-bold">⏰ From Clock In: {clock.rate_type==="day"?`${clock.days_worked} day${clock.days_worked===1?"":"s"}`:`${clock.hours_worked} hours`} approved, not paid yet</div>
+                      <div>{clock.notes}. {clock.rate?"The worker's rate is filled in.":"No rate on the worker: type the rate."} You can change anything below. These days are marked paid when you save.</div>
+                      {!prefillWorker?.fromClock&&<button type="button" onClick={dropClock} className="font-bold underline">Don't use the clocked time</button>}
+                    </div>
+                  )}
+                  {!clock&&clockFound?.key===clockKey&&clockFound.off&&clockFound.use&&(
+                    <button type="button" onClick={()=>applyClock(clockFound.use!)} className="w-full rounded-xl border border-emerald-500/30 p-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">⏰ Use the clocked time ({clockFound.use.notes})</button>
+                  )}
+                  {clockFound?.key===clockKey&&clockFound.waiting>0&&(
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+                      {clockFound.waiting} more clocked day{clockFound.waiting===1?" is":"s are"} waiting for approval. Approve {clockFound.waiting===1?"it":"them"} in Clock In → ✅ Approve &amp; pay, then {clock?"start this payment again":"pick the worker again"} to include {clockFound.waiting===1?"it":"them"}.
+                    </div>
+                  )}
+                  {form.worker_id&&!clock&&clockFound?.key===clockKey&&!clockFound.use&&!clockFound.waiting&&(
+                    <div className="text-[11px] text-slate-500 text-center">No clocked time waiting to be paid for this worker{form.project_id?" on this project":""}.</div>
+                  )}
                   <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-2">Payment Type</label>
                     <div className="grid grid-cols-3 gap-2">
                       {[{v:"task",l:"By Task"},{v:"day",l:"By Day"},{v:"hour",l:"By Hour"}].map(t=>(
