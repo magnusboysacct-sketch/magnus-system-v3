@@ -28,6 +28,28 @@ export function getFix(timeoutMs = 20000): Promise<Fix | null> {
   });
 }
 
+// Like getFix, but says WHY there is no location (so the page can tell the person what to do).
+export function getFixWhy(timeoutMs = 30000): Promise<{ fix: Fix | null; why: "denied" | "unavailable" | "timeout" | "unsupported" | null }> {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) { resolve({ fix: null, why: "unsupported" }); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ fix: { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy || 0) }, why: null }),
+      (e) => resolve({ fix: null, why: e.code === 1 ? "denied" : e.code === 3 ? "timeout" : "unavailable" }),
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
+    );
+  });
+}
+// A point typed or pasted: "18.1234, -77.5678", or a Google Maps link (…@18.12,-77.56,… or …?q=18.12,-77.56…).
+export function parsePoint(text: string): Fix | null {
+  const t = decodeURIComponent(text || "");
+  // the pin of a place link (!3d…!4d…) first: "@…" in the same link is only where the map was looking
+  const m = /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/.exec(t) || /[?&](?:q|query|ll|destination)=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/.exec(t)
+    || /@(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/.exec(t) || /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(t);
+  if (!m) return null;
+  const lat = Number(m[1]), lng = Number(m[2]);
+  return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng, accuracy: 0 } : null;
+}
+
 // A camera photo made small (longest side 800 px, JPEG) as a data URL.
 export function shrinkPhoto(file: File, maxSide = 800): Promise<string> {
   return new Promise((resolve, reject) => {

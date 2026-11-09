@@ -9,7 +9,7 @@ import {
   staffClockIn, staffClockOut, timeWords, uploadStaffClockPhoto, type StaffShift,
   fetchDiary, fetchMediaForShifts, staffAddWorkPhoto, stampPhoto, stampWords, type MediaRow,
   approveShifts, fetchShiftsToApprove, rejectShifts, unapproveShifts, workOutPay, type FromClock, type PayShift,
-  deleteShift, editShift, jaHM, jaTime, manualShift,
+  deleteShift, editShift, jaHM, jaTime, manualShift, getFixWhy, parsePoint,
 } from "../lib/attendance";
 
 type Proj = { id: string; name: string; status: string | null; site_lat: number | null; site_lng: number | null; site_radius_m: number | null };
@@ -337,6 +337,8 @@ function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => voi
   const [radius, setRad] = useState<number>(300);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pasted, setPasted] = useState("");
+  const [savedPoint, setSavedPoint] = useState<{ lat: number; lng: number } | null>(null);
 
   function pick(id: string) {
     setProjectId(id); setNote(null);
@@ -346,14 +348,31 @@ function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => voi
   async function saveHere() {
     if (!projectId) { setNote({ ok: false, text: "Pick the project." }); return; }
     setBusy(true); setNote(null);
-    const fix = await getFix(30000);
-    if (!fix) { setBusy(false); setNote({ ok: false, text: "The phone could not find where you are. Turn on Location and try again." }); return; }
+    const { fix, why } = await getFixWhy(30000);
+    if (!fix) {
+      setBusy(false);
+      setNote({ ok: false, text: why === "denied"
+        ? "NOT SAVED: this browser is not allowed to use your location. Allow Location for this site (the 📍 or 🔒 by the web address), then try again. Or paste the site from Google Maps below."
+        : "NOT SAVED: this device could not find where you are (a computer often can't). Do it on your phone while standing on the site, or paste the site from Google Maps below." });
+      return;
+    }
     try {
       await setSite(projectId, fix, radius);
+      setSavedPoint({ lat: fix.lat, lng: fix.lng });
       setNote({ ok: true, text: fix.accuracy > 100
         ? `Saved, but the phone was only sure to ${fix.accuracy} m. For a better point, step outside, wait a minute and save again.`
         : `Saved. Workers within ${distanceWords(radius)} of this spot are "on site".` });
     } catch (e) { setNote({ ok: false, text: e instanceof Error ? e.message : "Could not save." }); }
+    setBusy(false);
+  }
+  // From the office: paste the site point from Google Maps (or type "18.1234, -77.5678")
+  async function savePasted() {
+    if (!projectId) { setNote({ ok: false, text: "Pick the project." }); return; }
+    const pt = parsePoint(pasted);
+    if (!pt) { setNote({ ok: false, text: 'That is not a map point. In Google Maps, press and hold on the site, copy the numbers that show (like 18.1234, -77.5678), and paste them here.' }); return; }
+    setBusy(true); setNote(null);
+    try { await setSite(projectId, pt, radius); setSavedPoint({ lat: pt.lat, lng: pt.lng }); setNote({ ok: true, text: `Saved. Workers within ${distanceWords(radius)} of that point are "on site".` }); }
+    catch (e) { setNote({ ok: false, text: e instanceof Error ? e.message : "Could not save." }); }
     setBusy(false);
   }
   async function saveRadius() {
@@ -371,7 +390,7 @@ function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => voi
         <option value="">Pick the project…</option>
         {open.map((x) => <option key={x.id} value={x.id}>{x.name}{x.site_lat == null ? " (not set)" : " ✓"}</option>)}
       </select>
-      {p && p.site_lat != null && <a href={mapLink(p.site_lat, p.site_lng) || "#"} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline">See the saved site point on the map</a>}
+      {(savedPoint || (p && p.site_lat != null)) && <a href={mapLink(savedPoint?.lat ?? p!.site_lat, savedPoint?.lng ?? p!.site_lng) || "#"} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline">See the saved site point on the map</a>}
       <label className="block text-sm text-slate-700 dark:text-slate-300">How far from that spot still counts as "on site"?
         <select value={radius} onChange={(e) => setRad(Number(e.target.value))} className={`${input} mt-1 w-full`}>
           {RADII.map((r) => <option key={r} value={r}>{distanceWords(r)}{r === 300 ? " (normal)" : r >= 1000 ? " (big site: farm, road)" : ""}</option>)}
@@ -379,6 +398,13 @@ function SiteModal({ projects, onClose }: { projects: Proj[]; onClose: () => voi
       </label>
       {note && <div className={`rounded-lg border px-3 py-2 text-sm ${note.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{note.text}</div>}
       <button onClick={() => void saveHere()} disabled={busy} className={`${btn} w-full min-h-[56px] bg-blue-600 hover:bg-blue-500 text-white text-base`}>{busy ? "⏳ Finding where you are…" : "📍 I am on the site now. Save this spot"}</button>
+      <div className="rounded-lg border border-slate-200 dark:border-white/[0.1] p-2 space-y-1.5">
+        <div className="text-xs text-slate-600 dark:text-slate-400">Not on the site? <b>Paste it from Google Maps:</b> press and hold on the site in Google Maps, copy the numbers (like 18.1234, -77.5678) or the link, and paste here.</div>
+        <div className="flex gap-2">
+          <input value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="18.1234, -77.5678" className={`${input} flex-1`} />
+          <button onClick={() => void savePasted()} disabled={busy || !pasted.trim()} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>Save</button>
+        </div>
+      </div>
       {p && p.site_lat != null && <button onClick={() => void saveRadius()} disabled={busy} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Only change the distance</button>}
       <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Done</button>
     </Shell>
