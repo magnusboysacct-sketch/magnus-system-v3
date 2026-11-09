@@ -15,6 +15,7 @@ import { WorkerIDCard } from "../components/WorkerIDCard";
 import { IdCardBatchDownload } from "../components/IdCardDownload";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import FileViewer from "../components/FileViewer";
+import IdCropModal from "../components/IdCropModal";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
@@ -456,6 +457,7 @@ export default function WorkersPage() {
   const [idViewer, setIdViewer] = useState<{ url: string; name: string } | null>(null);
   const idSideInput = useRef<HTMLInputElement>(null);
   const idSideFor = useRef<"front" | "back">("back");
+  const [idToCrop, setIdToCrop] = useState<File | null>(null);      // a picture chosen with Replace / Add: framed before it is kept
   function setIdFile(side: "front" | "back", file: File | null) {
     if (side === "front") idPhotoFileRef.current = file; else idBackFileRef.current = file;
     setIdPreview(p => { if (p[side]) URL.revokeObjectURL(p[side]!); return { ...p, [side]: file ? URL.createObjectURL(file) : null }; });
@@ -985,7 +987,9 @@ export default function WorkersPage() {
           {/* The ID card pictures: front and back stay with the worker; tap one to see it big */}
           {idViewer && <FileViewer url={idViewer.url} name={idViewer.name} mime="image/jpeg" onClose={() => setIdViewer(null)}/>}
           <input ref={idSideInput} type="file" accept="image/*" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setIdFile(idSideFor.current, f); }}/>
+            onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setIdToCrop(f); }}/>
+          {idToCrop && <IdCropModal file={idToCrop} title={`ID ${idSideFor.current}`} onCancel={() => setIdToCrop(null)}
+            onDone={f => { setIdFile(idSideFor.current, f); setIdToCrop(null); }}/>}
           {(() => {
             const saved = { front: editWorker?.id_photo_url || null, back: editWorker?.id_back_photo_url || null };
             const hasSaved = { front: !!photoRefs.current.get(editWorker?.id || "")?.id, back: !!photoRefs.current.get(editWorker?.id || "")?.idBack };

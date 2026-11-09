@@ -37,13 +37,14 @@ async function cropFile(
   const sw = Math.min(img.naturalWidth  - sx, (box.w/100)*cW * (img.naturalWidth/dW));
   const sh = Math.min(img.naturalHeight - sy, (box.h/100)*cH * (img.naturalHeight/dH));
 
-  const MAX = 1600, scale = Math.min(MAX/sw, MAX/sh, 1);
+  // kept small: longest side 1200 px (plenty for the AI and for printing a copy), JPEG
+  const MAX = 1200, scale = Math.min(MAX/sw, MAX/sh, 1);
   const canvas = document.createElement("canvas");
   canvas.width  = Math.round(sw*scale);
   canvas.height = Math.round(sh*scale);
   canvas.getContext("2d")!.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise<Blob>((res,rej) =>
-    canvas.toBlob(b => b?res(b):rej(new Error("blob")), "image/jpeg", 0.92)
+    canvas.toBlob(b => b?res(b):rej(new Error("blob")), "image/jpeg", 0.82)
   );
   return new File([blob], "id_scan.jpg", { type:"image/jpeg" });
 }
@@ -259,7 +260,7 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
           <div className="grid grid-cols-2 gap-3">
             {(["front","back"] as Side[]).map(sd => (
               <div key={sd} className="rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] p-2 space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">{sd === "front" ? "1. Front" : "2. Back (optional)"}</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">{sd === "front" ? "1. Front" : "2. Back (optional)"}{files[sd] ? <span className="ml-1 font-normal normal-case tracking-normal text-emerald-600">· {Math.max(1, Math.round(files[sd]!.size / 1024))} KB</span> : null}</div>
                 {thumbs[sd] ? (
                   <>
                     <img src={thumbs[sd]!} alt={`${sd} of the ID`} className="w-full h-24 object-contain rounded-lg bg-black"/>

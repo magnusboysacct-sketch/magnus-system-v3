@@ -16,6 +16,7 @@ import EditableDropdown from "../components/common/EditableDropdown";
 import PhotoCropModal from "../components/PhotoCropModal";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import FileViewer from "../components/FileViewer";
+import IdCropModal from "../components/IdCropModal";
 import { fetchStaffIdDoc, saveStaffIdDoc, staffIdPictureUrls } from "../lib/staffIdDocs";
 
 function fmtJMD(n: number) {
@@ -73,6 +74,7 @@ export default function SettingsRecordsPage() {
   const [idView, setIdView] = useState<{ url: string; name: string } | null>(null);
   const idSideRef = useRef<HTMLInputElement>(null);
   const idSideFor = useRef<"front" | "back">("back");
+  const [idToCrop, setIdToCrop] = useState<File | null>(null);
   function setIdFile(side: "front" | "back", f: File | null) {
     setIdFiles(x => ({ ...x, [side]: f }));
     if (f) setIdUrls(u => ({ ...u, [side]: URL.createObjectURL(f) }));
@@ -808,7 +810,9 @@ export default function SettingsRecordsPage() {
                   🪪 Scan ID with AI (front and back)
                 </button>
               )}
-              <input ref={idSideRef} type="file" accept="image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if (f) setIdFile(idSideFor.current, f); }}/>
+              <input ref={idSideRef} type="file" accept="image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if (f) setIdToCrop(f); }}/>
+              {idToCrop && <IdCropModal file={idToCrop} title={`ID ${idSideFor.current}`} onCancel={()=>setIdToCrop(null)}
+                onDone={f=>{ setIdFile(idSideFor.current, f); setIdToCrop(null); }}/>}
               <div className="grid grid-cols-2 gap-2">
                 {(["front","back"] as const).map(side=>(
                   <div key={side} className="space-y-1">
