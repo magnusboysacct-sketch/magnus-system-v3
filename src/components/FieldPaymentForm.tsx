@@ -516,10 +516,17 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     </head><body>${html}</body></html>`);
   }
 
+  // Final payment text: what was earned, the advances, and the cash handed over — or what the worker still owes
+  function finalWords(amount:number):string{
+    if(form.payment_type!=="final"||prevAdv<=0)return form.payment_type==="final"?"PAID IN FULL.":"";
+    const bal=amount-prevAdv;
+    return `Earned: ${fmtJMD(amount)}\nLess advances: -${fmtJMD(prevAdv)}\n`+(bal<0?`WORKER STILL OWES: ${fmtJMD(-bal)}`:`BALANCE PAID: ${fmtJMD(bal)}\nPAID IN FULL. All advances settled.`);
+  }
+
   // WhatsApp — text summary (receipt shown in print)
   function sendWhatsApp() {
     const amount=form.payment_type==="advance"?parseFloat(form.advance_amount)||0:parseFloat(form.total_amount)||0;
-    const msg=`*${company?.company_name||""}*\n*${form.payment_type==="advance"?"ADVANCE PAYMENT":form.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}*\n\nReceipt #: ${receiptNumber}\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${selectedProject?`Project: ${selectedProject.name}\n`:""}${selectedMilestone?`Milestone: ${selectedMilestone.milestone_name}\n`:""}${form.task_name?`Task: ${form.task_name}\n`:""}Payment: ${form.payment_method.replace("_"," ")}\n\n*AMOUNT: ${fmtJMD(amount)}*\n${form.payment_type==="advance"?"This is an advance. Balance due on completion.":form.payment_type==="final"?"PAID IN FULL. All advances settled.":""}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`;
+    const msg=`*${company?.company_name||""}*\n*${form.payment_type==="advance"?"ADVANCE PAYMENT":form.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}*\n\nReceipt #: ${receiptNumber}\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${selectedProject?`Project: ${selectedProject.name}\n`:""}${selectedMilestone?`Milestone: ${selectedMilestone.milestone_name}\n`:""}${form.task_name?`Task: ${form.task_name}\n`:""}Payment: ${form.payment_method.replace("_"," ")}\n\n${form.payment_type==="final"&&prevAdv>0?"":`*AMOUNT: ${fmtJMD(amount)}*\n`}${form.payment_type==="advance"?"This is an advance. Balance due on completion.":finalWords(amount)}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`;
     openWhatsApp(form.worker_phone,async()=>withReceiptLink(msg,await ensureLink())).catch(linkFailed);
   }
 
@@ -551,16 +558,16 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     const subject=`Payment Receipt - ${form.worker_name} - ${receiptNumber}`;
     const body=(
       `${company?.company_name||""}\n\n`+
-      `${form.payment_type==="advance"?"ADVANCE PAYMENT":form.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
+      `${form.payment_type==="advance"?"ADVANCE PAYMENT":form.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${receiptNumber}\nDate: ${new Date().toLocaleDateString()}\n\n`+
       `Worker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n`+
       `${selectedProject?`Project: ${selectedProject.name}\n`:""}`+
       `${selectedMilestone?`Milestone: ${selectedMilestone.milestone_name}\n`:""}`+
       `${form.task_name?`Task: ${form.task_name}\n`:""}`+
       `Payment: ${form.payment_method.replace("_"," ")}\n\n`+
-      `AMOUNT: ${fmtJMD(amount)}\n\n`+
+      `${form.payment_type==="final"&&prevAdv>0?"":`AMOUNT: ${fmtJMD(amount)}\n\n`}`+
       `${form.payment_type==="advance"?"This is an advance payment. Balance due on completion.":""}`+
-      `${form.payment_type==="final"?"PAID IN FULL. All advances settled. Thank you!":""}`+
+      `${form.payment_type==="final"?finalWords(amount):""}`+
       `\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`
     );
     openEmail(subject,async()=>withReceiptLink(body,await ensureLink())).catch(linkFailed);
@@ -879,6 +886,11 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                       <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Total Earned</span><span className="text-slate-900 dark:text-slate-200 font-bold">{fmtJMD(totalAmount)}</span></div>
                       <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Less Advances</span><span className="text-amber-400 font-bold">- {fmtJMD(prevAdv)}</span></div>
                       <div className="border-t border-slate-200 dark:border-white/[0.08] pt-1.5 flex justify-between text-sm font-bold"><span className="text-slate-900 dark:text-slate-200">Balance to Pay</span><span className="text-emerald-600 dark:text-emerald-400">{fmtJMD(Math.max(0,totalAmount-prevAdv))}</span></div>
+                      {prevAdv>totalAmount&&(
+                        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-600 dark:text-red-400">
+                          ⚠️ Worker still owes you {fmtJMD(prevAdv-totalAmount)}. The advances are more than the work, so there is nothing to hand over.
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -929,7 +941,12 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 </div>
               </div>
               {form.payment_type==="final"&&prevAdv>0&&(
-                <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-1">Previous advances: {fmtJMD(prevAdv)} will be settled</div>
+                <div className="mt-1 space-y-0.5">
+                  <div className="text-[11px] text-slate-800 dark:text-slate-500">Previous advances: {fmtJMD(prevAdv)} will be settled</div>
+                  {prevAdv>totalAmount
+                    ?<div className="text-sm font-bold text-red-600 dark:text-red-400">⚠️ Worker still owes you {fmtJMD(prevAdv-totalAmount)}</div>
+                    :<div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">Cash to hand over: {fmtJMD(totalAmount-prevAdv)}</div>}
+                </div>
               )}
             </div>
 

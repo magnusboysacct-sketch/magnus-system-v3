@@ -19,6 +19,9 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
   const totalAdvances = payment.previous_advances||0;
   const earned = Number(payment.total_amount||0);
   const balance = earned - totalAdvances;
+  const isFinal = payment.payment_type === "final";
+  const owes = isFinal && balance < 0;          // the advances were more than the work: the worker still owes the difference
+  const money = (n: number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(n);
   
   return `
   <div style="background:#fff;padding:32px;font-family:Georgia,serif;color:#1a1a1a;max-width:600px;margin:0 auto">
@@ -29,7 +32,7 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
       <div style="font-size:11px;color:#666">${company?.phone?`Tel: ${company.phone}`:""}${company?.phone&&company?.email?" · ":""}${company?.email||""}</div>
       <div style="margin-top:12px">
         <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:${payment.payment_type==="advance"?"#d97706":payment.payment_type==="final"?"#16a34a":"#0891b2"}">
-          ${payment.payment_type==="advance"?"⚡ ADVANCE PAYMENT":payment.payment_type==="final"?"✅ FINAL PAYMENT — PAID IN FULL":"💰 PAYMENT RECEIPT"}
+          ${payment.payment_type==="advance"?"⚡ ADVANCE PAYMENT":isFinal?(owes?"FINAL PAYMENT — WORKER OWES A BALANCE":"✅ FINAL PAYMENT — PAID IN FULL"):"💰 PAYMENT RECEIPT"}
         </div>
         <div style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:3px;margin-top:4px">Payment Receipt</div>
         <div style="font-size:11px;color:#666;margin-top:3px">Receipt #${payment.receipt_number} · ${new Date(payment.created_at||Date.now()).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
@@ -52,14 +55,15 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
         <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Work Date</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${receiptDay(payment.work_date).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</td></tr>
         <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Payment Method</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right;text-transform:uppercase">${(payment.payment_method||"cash").replace("_"," ")}</td></tr>
         ${payment.work_type?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Work Done</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${payment.work_type}</td></tr>`:""}
+        ${isFinal&&totalAdvances>0?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Total Earned</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${money(earned)}</td></tr>`:""}
         ${totalAdvances>0?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Previous Advances</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right;color:#d97706">- ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(totalAdvances)}</td></tr>`:""}
         ${payment.notes?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Notes</td><td style="padding:7px 0;font-size:13px;text-align:right">${payment.notes}</td></tr>`:""}
       </tbody>
     </table>
 
     <div style="border-top:3px solid #1a1a1a;border-bottom:3px solid #1a1a1a;padding:12px 0;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <span style="font-size:16px;font-weight:900">${payment.payment_type==="advance"?"ADVANCE PAID":"TOTAL PAID"}</span>
-      <span style="font-size:26px;font-weight:900;color:${payment.payment_type==="advance"?"#d97706":"#16a34a"}">${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(earned)}</span>
+      <span style="font-size:16px;font-weight:900">${payment.payment_type==="advance"?"ADVANCE PAID":isFinal&&totalAdvances>0?"BALANCE PAID":"TOTAL PAID"}</span>
+      <span style="font-size:26px;font-weight:900;color:${payment.payment_type==="advance"?"#d97706":"#16a34a"}">${money(isFinal&&totalAdvances>0?Math.max(0,balance):earned)}</span>
     </div>
 
     ${payment.payment_type==="advance"?`
@@ -67,7 +71,12 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
       ⚡ This is an advance payment. Balance will be settled upon completion of work.
     </div>`:""}
 
-    ${payment.payment_type==="final"?`
+    ${owes?`
+    <div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#991b1b;text-align:center;font-weight:700">
+      ⚠️ The advances (${money(totalAdvances)}) are more than the work (${money(earned)}).<br/>WORKER STILL OWES: ${money(-balance)}
+    </div>`:""}
+
+    ${isFinal&&!owes?`
     <div style="background:#d1fae5;border:1px solid #10b981;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065f46;text-align:center;font-weight:700">
       ✅ PAID IN FULL — All advances settled. Thank you!
     </div>`:""}
