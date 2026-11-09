@@ -74,6 +74,7 @@ type Expense = {
   worker_id: string | null;
   status: string | null;
   receipt_url: string | null;
+  line_items?: LineItem[] | null;         // the items on the receipt (migration 20260996000000)
   vendor?: string | null;
   receipt_number?: string | null;
   paid_from_account_id: string | null;
@@ -85,6 +86,18 @@ type Expense = {
 };
 
 type Category = { id: string; name: string; category_type: string; chart_account_id: string | null };
+type LineItem = { description: string; quantity: number | null; unit_price: number | null; amount: number | null };
+type ItemRow = { description: string; quantity: string; unit_price: string; amount: string };   // as typed in the form
+const toRows = (items: LineItem[] | null | undefined): ItemRow[] => (items || []).map(i => ({
+  description: i.description || "", quantity: i.quantity != null ? String(i.quantity) : "", unit_price: i.unit_price != null ? String(i.unit_price) : "", amount: i.amount != null ? String(i.amount) : "" }));
+const fromRows = (rows: ItemRow[]): LineItem[] | null => {
+  const n = (v: string) => { const x = Number(v.replace(/,/g, "")); return v.trim() && isFinite(x) ? x : null; };
+  const out = rows.filter(r => r.description.trim() || r.amount.trim()).map(r => ({ description: r.description.trim(), quantity: n(r.quantity), unit_price: n(r.unit_price), amount: n(r.amount) }));
+  return out.length ? out : null;
+};
+const scanRows = (items: { description: string; quantity: number; unitPrice: number; amount: number }[] | undefined): ItemRow[] =>
+  (items || []).map(i => ({ description: i.description || "", quantity: i.quantity ? String(i.quantity) : "", unit_price: i.unitPrice ? String(i.unitPrice) : "", amount: i.amount ? String(i.amount) : "" }));
+const isPdf = (u: string | null | undefined) => !!u && /\.pdf(\?|$)/i.test(u.split("?")[0] + "?");
 
 type Tab = "all" | "pending" | "approved" | "filing";
 
@@ -173,6 +186,7 @@ export default function ExpensesPage() {
       receipt_number: result.receiptNumber || f.receipt_number,
       amount:      result.amount ? result.amount.toString() : f.amount,
       expense_date: result.date || f.expense_date,
+      items: result.lineItems?.length ? scanRows(result.lineItems) : f.items,
     }));
   }
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -180,8 +194,12 @@ export default function ExpensesPage() {
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
     chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "",
-    vendor: "", receipt_number: "",
+    vendor: "", receipt_number: "", items: [] as ItemRow[],
   });
+  // the expense opened to look at (row click), and the receipt picture shown in the form
+  const [viewing, setViewing] = useState<Expense | null>(null);
+  const [receiptView, setReceiptView] = useState<string | null>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const dupChecks = useDuplicateCheck({
     vendor: form.vendor, number: form.receipt_number, amount: Number(form.amount) || null, date: form.expense_date || null, excludeId: editingExpense?.id,
   }, showNew);
@@ -215,7 +233,7 @@ export default function ExpensesPage() {
     const a = fi.ai || {};
     setForm({ ...blankForm, receipt_url: fi.path, project_id: fi.projectId || "",
       amount: a.amount ? String(a.amount) : "", expense_date: a.date && /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : "",
-      vendor: a.vendor || "", receipt_number: a.receiptNumber || "",
+      vendor: a.vendor || "", receipt_number: a.receiptNumber || "", items: scanRows(a.lineItems),
       description: fi.note || (a.vendor ? `Purchase at ${a.vendor}` : "") });
     setShowNew(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,7 +324,7 @@ export default function ExpensesPage() {
     setAccounts((data || []) as LedgerAccount[]);
   }
 
-  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "", vendor: "", receipt_number: "" };
+  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "", vendor: "", receipt_number: "", items: [] as ItemRow[] };
 
   function openNew() {
     setNotDuplicate(false);
@@ -332,9 +350,22 @@ export default function ExpensesPage() {
       paid_from_account_id: exp.paid_from_account_id || "",
       vendor: exp.vendor || "",
       receipt_number: exp.receipt_number || "",
+      items: toRows(exp.line_items),
     });
     setShowNew(true);
   }
+
+  // the receipt picture shown in the form: the new one chosen, or the one already attached
+  useEffect(() => {
+    let alive = true, objectUrl: string | null = null;
+    if (receiptFile) { objectUrl = URL.createObjectURL(receiptFile); setReceiptView(objectUrl); }
+    else if (form.receipt_url) {
+      const shown = editingExpense && receiptRefs.current.get(editingExpense.id) === form.receipt_url ? editingExpense.receipt_url : null;
+      if (shown) setReceiptView(shown);
+      else void resolveFileUrl(form.receipt_url).then(u => { if (alive) setReceiptView(u); });
+    } else setReceiptView(null);
+    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [receiptFile, form.receipt_url, editingExpense]);
 
   function closeModal() {
     setNotDuplicate(false);
@@ -394,6 +425,7 @@ export default function ExpensesPage() {
         paid_from_account_id: form.paid_from_account_id || null,
         vendor: form.vendor.trim() || null,
         receipt_number: form.receipt_number.trim() || null,
+        line_items: fromRows(form.items),
       };
       // Once an expense is on the ledger, what the entry was built from can't be changed here (that would leave the books wrong).
       if (editingExpense?.gl_transaction_id) {
@@ -672,7 +704,7 @@ export default function ExpensesPage() {
                     action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={openNew}>Log Expense</Btn>}/>
                 </Td></tr>
               ) : filtered.map(e => (
-                <Tr key={e.id}>
+                <Tr key={e.id} onClick={() => setViewing(e)}>
                   <Td muted>{fmtDate(e.expense_date)}</Td>
                   <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span></Td>
                   <Td muted>{categoryLabel(e) || "—"}</Td>
@@ -696,7 +728,11 @@ export default function ExpensesPage() {
                     })()}
                   </Td>
                   <Td>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1" onClick={ev => ev.stopPropagation()}>
+                      {e.receipt_url && (
+                        <a href={e.receipt_url} target="_blank" rel="noopener noreferrer" title="View the receipt"
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">🧾</a>
+                      )}
                       {POSTABLE_STATUSES.includes(e.status || "") && !e.gl_transaction_id && (
                         <button onClick={() => postAndReport(e.id, "")} title="Post this expense to the General Ledger"
                           className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 transition-colors">
@@ -870,11 +906,26 @@ export default function ExpensesPage() {
             </button>
           )}
 
-          {receiptFile ? (
-            <div className="text-[11px] text-emerald-600 dark:text-emerald-400">Receipt photo ready: it is filed in the receipts folder when you save.</div>
-          ) : form.receipt_url ? (
-            <div className="text-[11px] text-slate-500">A receipt picture is attached to this expense.</div>
-          ) : null}
+          {/* the receipt itself: see it, open it big, or change it */}
+          <input ref={replaceRef} type="file" accept="image/*,.pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setReceiptFile(f); }}/>
+          {(receiptFile || form.receipt_url) ? (
+            <div className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-white/[0.08] p-2">
+              {receiptView && !(receiptFile ? receiptFile.type === "application/pdf" : isPdf(form.receipt_url))
+                ? <a href={receiptView} target="_blank" rel="noopener noreferrer"><img src={receiptView} alt="Receipt" className="h-24 w-20 rounded-lg object-cover border border-slate-200"/></a>
+                : <a href={receiptView || undefined} target="_blank" rel="noopener noreferrer" className="h-24 w-20 rounded-lg bg-slate-100 dark:bg-white/[0.05] flex items-center justify-center text-3xl">📄</a>}
+              <div className="text-[11px] space-y-1.5">
+                <div className={receiptFile ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500"}>
+                  {receiptFile ? "New receipt picture: it is filed in the receipts folder when you save." : "The receipt attached to this expense."}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {receiptView && <a href={receiptView} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 underline">🧾 View receipt</a>}
+                  <button type="button" onClick={() => replaceRef.current?.click()} className="font-semibold text-slate-600 dark:text-slate-300 underline">{receiptFile ? "Choose another" : "Replace picture"}</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => replaceRef.current?.click()} className="text-[11px] font-semibold text-blue-600 underline">📎 Attach a receipt picture (without scanning)</button>
+          )}
 
           <Field label="Description">
             <Input placeholder="e.g. Cement bags from Hardware Plus" value={form.description}
@@ -979,6 +1030,47 @@ export default function ExpensesPage() {
               </>
             );
           })()}
+          {/* the items on the receipt (a record of what was bought; the Amount above is what goes in the books) */}
+          <div className="rounded-xl border border-slate-200 dark:border-white/[0.08] p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-600 dark:text-slate-300">Items on the receipt {form.items.length > 0 && <span className="font-normal text-slate-400">({form.items.length})</span>}</div>
+              <button type="button" onClick={() => setForm(f => ({ ...f, items: [...f.items, { description: "", quantity: "", unit_price: "", amount: "" }] }))}
+                className="text-[11px] font-semibold text-blue-600 underline">＋ Add item</button>
+            </div>
+            {form.items.length === 0 ? <div className="text-[11px] text-slate-400">No items. Scanning a receipt fills them in, or add them yourself.</div> : (<>
+              <div className="grid grid-cols-[1fr_56px_80px_88px_20px] gap-1 text-[10px] font-semibold text-slate-400"><span>Item</span><span>Qty</span><span>Price</span><span>Amount</span><span/></div>
+              {form.items.map((it, i) => {
+                const set = (k: keyof ItemRow, v: string) => setForm(f => ({ ...f, items: f.items.map((x, j) => {
+                  if (j !== i) return x;
+                  const nx = { ...x, [k]: v };
+                  // quantity x price fills the amount (when both are numbers)
+                  if ((k === "quantity" || k === "unit_price") && Number(nx.quantity) > 0 && Number(nx.unit_price) > 0) nx.amount = String(Math.round(Number(nx.quantity) * Number(nx.unit_price) * 100) / 100);
+                  return nx;
+                }) }));
+                const cls = "w-full rounded-md border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] px-1.5 py-1 text-xs text-slate-800 dark:text-slate-200";
+                return (
+                  <div key={i} className="grid grid-cols-[1fr_56px_80px_88px_20px] gap-1 items-center">
+                    <input value={it.description} onChange={e => set("description", e.target.value)} placeholder="e.g. Cement 42.5" className={cls}/>
+                    <input value={it.quantity} onChange={e => set("quantity", e.target.value)} inputMode="decimal" className={cls}/>
+                    <input value={it.unit_price} onChange={e => set("unit_price", e.target.value)} inputMode="decimal" className={cls}/>
+                    <input value={it.amount} onChange={e => set("amount", e.target.value)} inputMode="decimal" className={cls}/>
+                    <button type="button" onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))} className="text-slate-400 hover:text-red-500" aria-label="Remove item">×</button>
+                  </div>
+                );
+              })}
+              {(() => {
+                const sum = form.items.reduce((t, x) => t + (Number(x.amount.replace(/,/g, "")) || 0), 0);
+                const amt = Number(form.amount) || 0;
+                const off = Math.abs(sum - amt) > 0.5;
+                return (
+                  <div className={`text-[11px] ${off ? "text-amber-600 dark:text-amber-400" : "text-slate-500"}`}>
+                    Items add up to {fmt(sum)}{off ? ` (the expense amount is ${fmt(amt)}; tax or a discount can explain the difference)` : ""}.
+                    {off && sum > 0 && <button type="button" onClick={() => setForm(f => ({ ...f, amount: String(Math.round(sum * 100) / 100) }))} className="ml-2 font-semibold underline">Use {fmt(sum)} as the amount</button>}
+                  </div>
+                );
+              })()}
+            </>)}
+          </div>
           <Field label="Status">
             <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="pending">Pending</option>
@@ -995,6 +1087,54 @@ export default function ExpensesPage() {
             </Btn>
           </div>
         </div>
+      </Modal>
+
+      {/* one expense opened to look at: its details, the receipt picture and the items */}
+      <Modal open={!!viewing} onClose={() => setViewing(null)} title={viewing?.description || "Expense"}
+        subtitle={viewing ? `${fmtDate(viewing.expense_date)} · ${fmt(viewing.amount)}` : undefined}>
+        {viewing && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              {([
+                ["Vendor / shop", viewing.vendor || "—"], ["Receipt / bill #", viewing.receipt_number || "—"],
+                ["Category", categoryLabel(viewing) || "—"], ["Project", viewing.projects?.name || "—"],
+                ["Status", viewing.status || "pending"], ["Paid from", viewing.paid_from_account_id ? (accountsById.get(viewing.paid_from_account_id)?.name || "—") : "—"],
+                ["Ledger", viewing.gl_transaction_id ? "Posted" : "Not posted"], ["Amount", fmt(viewing.amount)],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k}><div className="text-[10px] uppercase tracking-wider text-slate-400">{k}</div><div className="font-semibold text-slate-800 dark:text-slate-200">{v}</div></div>
+              ))}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Receipt</div>
+              {viewing.receipt_url ? (
+                isPdf(receiptRefs.current.get(viewing.id))
+                  ? <a href={viewing.receipt_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-blue-600">📄 Open the receipt (PDF)</a>
+                  : <a href={viewing.receipt_url} target="_blank" rel="noopener noreferrer" title="Open full size"><img src={viewing.receipt_url} alt="Receipt" className="max-h-80 w-auto rounded-lg border border-slate-200"/></a>
+              ) : <div className="text-xs text-slate-400">No receipt picture. Use Edit → "Attach a receipt picture".</div>}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Items on the receipt</div>
+              {(viewing.line_items || []).length === 0 ? <div className="text-xs text-slate-400">No items recorded.</div> : (
+                <table className="w-full text-xs">
+                  <thead><tr className="text-left text-slate-400"><th className="py-1">Item</th><th className="text-right">Qty</th><th className="text-right">Price</th><th className="text-right">Amount</th></tr></thead>
+                  <tbody>
+                    {(viewing.line_items || []).map((it, i) => (
+                      <tr key={i} className="border-t border-slate-100 dark:border-white/[0.05] text-slate-700 dark:text-slate-300">
+                        <td className="py-1">{it.description || "—"}</td><td className="text-right">{it.quantity ?? ""}</td>
+                        <td className="text-right">{it.unit_price != null ? fmt(it.unit_price) : ""}</td><td className="text-right font-semibold">{it.amount != null ? fmt(it.amount) : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+              {viewing.receipt_url && <a href={viewing.receipt_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-lg border border-slate-200 dark:border-white/[0.1] px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">🧾 Open receipt</a>}
+              <Btn variant="ghost" onClick={() => setViewing(null)}>Close</Btn>
+              <Btn variant="primary" onClick={() => { const e = viewing; setViewing(null); openEdit(e); }}>✏️ Edit</Btn>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

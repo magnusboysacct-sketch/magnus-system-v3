@@ -12,7 +12,8 @@ export interface InboxItem {
   dropped_by: string | null; dropped_at: string; ai_status: "pending" | "done" | "failed"; ai_data: InboxAI | null; status: InboxStatus;
   handled_by: string | null; handled_at: string | null; expense_id: string | null; bill_id: string | null; doc_file_id: string | null; discard_reason: string | null;
 }
-export interface InboxAI { vendor?: string; amount?: number; date?: string; receiptNumber?: string; tax?: number; paymentMethod?: string }
+export interface InboxAI { vendor?: string; amount?: number; date?: string; receiptNumber?: string; tax?: number; paymentMethod?: string;
+  lineItems?: { description: string; quantity: number; unitPrice: number; amount: number }[] }
 // What the expense / bill form is opened with (router state / props).
 export interface FromInbox { id: string; path: string; ai: InboxAI | null; projectId: string | null; note: string | null }
 
@@ -42,7 +43,7 @@ export async function readReceipt(item: Pick<InboxItem, "id" | "file_path" | "mi
     const blob = file ?? await download(item.file_path);
     const r: ReceiptScanResult | null = await aiScanReceipt(new File([blob], item.file_path.split("/").pop() || "receipt.jpg", { type: item.mime_type || blob.type || "image/jpeg" }));
     const ok = !!r && (r.amount > 0 || !!r.vendor);
-    const ai: InboxAI | null = ok && r ? { vendor: r.vendor || undefined, amount: r.amount || undefined, date: r.date || undefined, receiptNumber: r.receiptNumber || undefined, tax: r.tax || undefined, paymentMethod: r.paymentMethod || undefined } : null;
+    const ai: InboxAI | null = ok && r ? { vendor: r.vendor || undefined, amount: r.amount || undefined, date: r.date || undefined, receiptNumber: r.receiptNumber || undefined, tax: r.tax || undefined, paymentMethod: r.paymentMethod || undefined, lineItems: r.lineItems?.length ? r.lineItems.slice(0, 100) : undefined } : null;
     await supabase.rpc("receipt_inbox_set_ai", { p_id: item.id, p_data: ai, p_ok: ok });
     return ai;
   } catch {
