@@ -14,6 +14,9 @@ import { WORKER_SAFE_COLUMNS } from "../lib/workers";
 import { fetchStaffHrFields, withStaffHr } from "../lib/staffHr";
 import EditableDropdown from "../components/common/EditableDropdown";
 import PhotoCropModal from "../components/PhotoCropModal";
+import { SimpleIDScanner } from "../components/SimpleIDScanner";
+import FileViewer from "../components/FileViewer";
+import { fetchStaffIdDoc, saveStaffIdDoc, staffIdPictureUrls } from "../lib/staffIdDocs";
 
 function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n);
@@ -60,6 +63,20 @@ export default function SettingsRecordsPage() {
   const [cropSrc, setCropSrc] = useState<string|null>(null); // object URL of the just-selected file, pending crop
   const [savingStaff, setSavingStaff] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  // the staff member's government ID (front and back), like a worker's (lib/staffIdDocs.ts)
+  const BLANK_ID = { id_number: "", id_type: "", address: "", date_of_birth: "" };
+  const [idFields, setIdFields] = useState(BLANK_ID);
+  const [idSaved, setIdSaved] = useState(BLANK_ID);
+  const [idFiles, setIdFiles] = useState<{ front: File | null; back: File | null }>({ front: null, back: null });
+  const [idUrls, setIdUrls] = useState<{ front: string | null; back: string | null }>({ front: null, back: null });
+  const [showStaffScanner, setShowStaffScanner] = useState(false);
+  const [idView, setIdView] = useState<{ url: string; name: string } | null>(null);
+  const idSideRef = useRef<HTMLInputElement>(null);
+  const idSideFor = useRef<"front" | "back">("back");
+  function setIdFile(side: "front" | "back", f: File | null) {
+    setIdFiles(x => ({ ...x, [side]: f }));
+    if (f) setIdUrls(u => ({ ...u, [side]: URL.createObjectURL(f) }));
+  }
 
   // Auth check — director only
   useEffect(()=>{
@@ -200,6 +217,13 @@ export default function SettingsRecordsPage() {
     });
     setNewPhotoUrl(null); setNewPhotoPath(null);
     setPhotoRemoved(false);
+    setIdFields(BLANK_ID); setIdSaved(BLANK_ID); setIdFiles({ front: null, back: null }); setIdUrls({ front: null, back: null }); setShowStaffScanner(false);
+    void fetchStaffIdDoc(s.id).then(async doc => {
+      if (!doc) return;
+      const f = { id_number: doc.id_number || "", id_type: doc.id_type || "", address: doc.address || "", date_of_birth: doc.date_of_birth || "" };
+      setIdFields(f); setIdSaved(f);
+      setIdUrls(await staffIdPictureUrls(doc));
+    });
     setEditModalOpen(true);
     // No employee number yet — assign the next one now so it's ready by the
     // time they hit Save. The field itself is never manually editable.
@@ -320,6 +344,14 @@ export default function SettingsRecordsPage() {
         .eq("id", selectedStaff.id);
 
       if (error) { alert("Failed to save: " + error.message); return; }
+      // the government ID: only when something changed
+      if (companyId && (idFiles.front || idFiles.back || JSON.stringify(idFields) !== JSON.stringify(idSaved))) {
+        try {
+          await saveStaffIdDoc({ userId: selectedStaff.id, companyId, front: idFiles.front, back: idFiles.back,
+            fields: { id_number: idFields.id_number.trim() || null, id_type: idFields.id_type.trim() || null, address: idFields.address.trim() || null,
+                      date_of_birth: /^\d{4}-\d{2}-\d{2}$/.test(idFields.date_of_birth) ? idFields.date_of_birth : null } });
+        } catch (e: unknown) { alert("The details are saved, but the ID was not: " + (e instanceof Error ? e.message : "try again")); }
+      }
       // New job title just got saved to a real record — reload the
       // suggestion list too so the combobox picks it up immediately, not
       // just after the next full page load.
@@ -757,6 +789,47 @@ export default function SettingsRecordsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Government ID: scan the front and back, keep both pictures (tap to see them big) */}
+            <div className="mt-5 space-y-2 rounded-xl border border-slate-200 dark:border-white/[0.08] p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600">Government ID</div>
+              {showStaffScanner ? (
+                <SimpleIDScanner onCancel={()=>setShowStaffScanner(false)} onResult={(r, front, back)=>{
+                  setShowStaffScanner(false);
+                  if (front) setIdFile("front", front);
+                  if (back) setIdFile("back", back);
+                  setIdFields(f=>({ id_number: r.idNumber || f.id_number, id_type: r.documentType && r.documentType !== "unknown" ? r.documentType : f.id_type,
+                                    address: r.address || f.address, date_of_birth: r.dateOfBirth || f.date_of_birth }));
+                  if (r.expiryDate && /^\d{4}-\d{2}-\d{2}$/.test(r.expiryDate)) setStaffForm(f=>({ ...f, id_expiry_date: f.id_expiry_date || r.expiryDate }));
+                  if (!staffForm.full_name.trim() && r.fullName) setStaffForm(f=>({ ...f, full_name: r.fullName }));
+                }}/>
+              ) : (
+                <button onClick={()=>setShowStaffScanner(true)} className="w-full rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2 text-xs font-semibold text-cyan-700 dark:text-cyan-300">
+                  🪪 Scan ID with AI (front and back)
+                </button>
+              )}
+              <input ref={idSideRef} type="file" accept="image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if (f) setIdFile(idSideFor.current, f); }}/>
+              <div className="grid grid-cols-2 gap-2">
+                {(["front","back"] as const).map(side=>(
+                  <div key={side} className="space-y-1">
+                    <div className="text-[9px] uppercase tracking-wider text-slate-400">{side}{idFiles[side] ? " · new" : ""}</div>
+                    {idUrls[side]
+                      ? <button onClick={()=>setIdView({ url: idUrls[side]!, name: `ID ${side}.jpg` })} className="block w-full"><img src={idUrls[side]!} alt={`ID ${side}`} className="w-full h-16 object-contain rounded bg-black"/></button>
+                      : <div className="h-16 rounded bg-slate-100 dark:bg-white/[0.04] flex items-center justify-center text-[10px] text-slate-400">No picture</div>}
+                    <button onClick={()=>{ idSideFor.current = side; idSideRef.current?.click(); }} className="text-[10px] font-semibold text-cyan-600 underline">{idUrls[side] ? "Replace" : `Add ${side}`}</button>
+                  </div>
+                ))}
+              </div>
+              {([["id_number","ID number"],["id_type","ID type (national ID, driver's licence…)"],["address","Address"],["date_of_birth","Date of birth (YYYY-MM-DD)"]] as const).map(([k,label])=>(
+                <div key={k}>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-0.5">{label}</label>
+                  <input value={idFields[k]} onChange={e=>setIdFields(f=>({ ...f, [k]: e.target.value }))}
+                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
+                </div>
+              ))}
+              <div className="text-[10px] text-slate-400">Only director, admin and secretary can open the ID pictures.</div>
+            </div>
+            {idView && <FileViewer url={idView.url} name={idView.name} mime="image/jpeg" onClose={()=>setIdView(null)}/>}
 
             <div className="flex gap-3 mt-6">
               <button onClick={()=>setEditModalOpen(false)}
