@@ -142,6 +142,8 @@ export const FLAG_WORDS: Record<string, string> = {
   forgot_clock_out: "Forgot to clock out",
   long_gap: "More than 3 hours with no site check",
   sent_late: "No signal: kept on the phone and sent later",
+  manual: "Entered by hand by a supervisor",
+  edited: "Times changed by a supervisor",
   no_work_photo: "No picture of the work",
   missed_check: "Did not answer an \"Are you on site?\" check",
 };
@@ -207,6 +209,7 @@ export interface StaffShift {
   site_radius_m: number | null; last_on_site_at: string | null; last_check_at: string | null; first_off_site_at: string | null;
   paid_until: string | null; minutes_worked: number | null; flags: string[]; clocked_in_by: string | null; clocked_out_by: string | null; note: string | null;
   approval?: "pending" | "approved" | "rejected"; approved_minutes?: number | null; approval_note?: string | null; field_payment_id?: string | null;
+  edit_log?: { at: string; by: string | null; what: string; note?: string; in?: string; out?: string; from_in?: string; from_out?: string }[];
   workers: { first_name: string | null; last_name: string | null; employee_id: string | null } | null;
   projects: { name: string | null } | null;
 }
@@ -342,4 +345,25 @@ export interface FromClock {
   shift_ids: string[]; project_id: string | null; rate_type: "hour" | "day";
   hours_worked: number; days_worked: number; rate: number; notes: string;
   worker: { id: string; name: string; id_number: string; phone: string };
+}
+
+// ── a supervisor puts in / changes / deletes time (migration 20260999000000). Workers' own clock always uses the real time. ──
+// A Jamaica day + "HH:MM" as an exact time.
+export const jaTime = (day: string, hm: string) => new Date(`${day}T${hm}:00-05:00`).toISOString();
+export const jaHM = (iso: string | null | undefined) => {
+  if (!iso) return "";
+  const d = new Date(new Date(iso).getTime() - 5 * 3600_000);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+};
+export async function manualShift(workerId: string, projectId: string, inISO: string, outISO: string, note: string): Promise<void> {
+  const { error } = await supabase.rpc("attendance_manual_shift", { p_worker: workerId, p_project: projectId, p_in: inISO, p_out: outISO, p_note: note });
+  if (error) throw new Error(error.message);
+}
+export async function editShift(shiftId: string, projectId: string, inISO: string, outISO: string, note: string): Promise<void> {
+  const { error } = await supabase.rpc("attendance_edit_shift", { p_shift: shiftId, p_project: projectId, p_in: inISO, p_out: outISO, p_note: note });
+  if (error) throw new Error(error.message);
+}
+export async function deleteShift(shiftId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("attendance_delete_shift", { p_shift: shiftId, p_reason: reason });
+  if (error) throw new Error(error.message);
 }

@@ -9,6 +9,7 @@ import {
   staffClockIn, staffClockOut, timeWords, uploadStaffClockPhoto, type StaffShift,
   fetchDiary, fetchMediaForShifts, staffAddWorkPhoto, stampPhoto, stampWords, type MediaRow,
   approveShifts, fetchShiftsToApprove, rejectShifts, unapproveShifts, workOutPay, type FromClock, type PayShift,
+  deleteShift, editShift, jaHM, jaTime, manualShift,
 } from "../lib/attendance";
 
 type Proj = { id: string; name: string; status: string | null; site_lat: number | null; site_lng: number | null; site_radius_m: number | null };
@@ -37,7 +38,8 @@ export default function AttendancePage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, Check[]>>({});
-  const [modal, setModal] = useState<"crew" | "site" | null>(null);
+  const [modal, setModal] = useState<"crew" | "site" | "manual" | null>(null);
+  const [editing, setEditing] = useState<StaffShift | null>(null);      // a supervisor changing a finished shift's times
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [view, setView] = useState<"day" | "diary" | "approve">("day");
@@ -109,6 +111,13 @@ export default function AttendancePage() {
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save the picture." }); }
   }
 
+  async function deleteRow(s: StaffShift) {
+    const reason = window.prompt(`Delete ${wname(s.workers)}'s time on ${s.work_date} (${timeWords(s.clock_in_at)} – ${timeWords(s.clock_out_at)})?\n\nWhy? (for example: entered twice, wrong worker)`, "");
+    if (!reason?.trim()) return;
+    try { await deleteShift(s.id, reason.trim()); setMsg({ ok: true, text: "Deleted. A copy is kept with the reason." }); reload(); }
+    catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not delete." }); }
+  }
+
   async function clockOutRow(s: StaffShift) {
     if (!window.confirm(`Clock out ${wname(s.workers)} now?`)) return;
     try {
@@ -137,6 +146,7 @@ export default function AttendancePage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {canAct && <button onClick={() => setModal("crew")} className={`${btn} bg-green-600 hover:bg-green-500 text-white`}>▶ Clock in crew</button>}
+          {APPROVE_ROLES.includes(role) && <button onClick={() => setModal("manual")} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>✍️ Add time by hand</button>}
           {canAct && <button onClick={() => setModal("site")} className={`${btn} bg-blue-600 hover:bg-blue-500 text-white`}>📍 Set site location</button>}
           <button onClick={reload} className={`${btn} border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300`}>Refresh</button>
         </div>
@@ -212,6 +222,9 @@ export default function AttendancePage() {
                       : <span className="text-slate-500">⏳ Waiting for approval</span>}</div>}
                     {s.clocked_in_by && <div className="text-xs text-slate-500">Clocked in by a supervisor</div>}
                     {s.note && <div className="text-xs text-slate-500">Note: {s.note}</div>}
+                    {(s.edit_log || []).filter((x) => x.what === "changed").slice(-1).map((x, i) => (
+                      <div key={i} className="text-xs text-amber-700 dark:text-amber-400">✏️ Changed {new Date(x.at).toLocaleDateString("en-US", { day: "numeric", month: "short" })}{x.from_in ? ` (was ${timeWords(x.from_in)} – ${timeWords(x.from_out)})` : ""}: {x.note}</div>
+                    ))}
                     <div className="mt-2 flex flex-wrap gap-2">
                       {inMap && <a href={inMap} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-600 underline">📍 Clock in on map</a>}
                       {outMap && <a href={outMap} target="_blank" rel="noreferrer" className="text-xs font-semibold text-blue-600 underline">📍 Clock out on map</a>}
@@ -219,6 +232,10 @@ export default function AttendancePage() {
                       {canAct && (s.status === "open" || (s.clock_out_at && now - new Date(s.clock_out_at).getTime() < 2 * 3600_000)) &&
                         <button onClick={() => { setPhotoFor(s); workRef.current?.click(); }} className="text-xs font-semibold text-blue-600 underline">📷 Add work picture</button>}
                       {canAct && s.status === "open" && <button onClick={() => void clockOutRow(s)} className="text-xs font-semibold text-red-600 underline">Clock out now</button>}
+                      {APPROVE_ROLES.includes(role) && s.status === "closed" && !s.field_payment_id && (<>
+                        <button onClick={() => setEditing(s)} className="text-xs font-semibold text-slate-700 dark:text-slate-300 underline">✏️ Change times</button>
+                        <button onClick={() => void deleteRow(s)} className="text-xs font-semibold text-red-600 underline">🗑 Delete</button>
+                      </>)}
                     </div>
                     {openRow === s.id && (
                       <div className="mt-2 rounded-lg bg-slate-50 dark:bg-white/[0.03] p-2 text-xs text-slate-700 dark:text-slate-300 space-y-0.5">
@@ -238,6 +255,9 @@ export default function AttendancePage() {
 
       </>)}
 
+      {(modal === "manual" || editing) && <TimeModal projects={projects} workers={workers} shift={editing} day={day}
+        onClose={() => { setModal(null); setEditing(null); }}
+        onSaved={(t) => { setModal(null); setEditing(null); setMsg({ ok: true, text: t }); reload(); }} />}
       {modal === "crew" && companyId && <CrewModal companyId={companyId} projects={projects} workers={workers} busyIds={shifts.filter((s) => s.status === "open").map((s) => s.worker_id)}
         onClose={() => { setModal(null); reload(); }} />}
       {modal === "site" && <SiteModal projects={projects} onClose={() => { setModal(null); reload(); }} />}
@@ -578,5 +598,57 @@ function ApproveView({ companyId }: { companyId: string }) {
         );
       })}
     </div>
+  );
+}
+
+// A supervisor puts in time by hand (any past day), or changes a finished shift. Workers' own clock always uses the real time.
+function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
+  projects: Proj[]; workers: Wkr[]; shift: StaffShift | null; day: string; onClose: () => void; onSaved: (t: string) => void;
+}) {
+  const [workerId, setWorkerId] = useState(shift?.worker_id || "");
+  const [projectId, setProjectId] = useState(shift?.project_id || (projects.length === 1 ? projects[0].id : ""));
+  const [date, setDate] = useState(shift?.work_date || day);
+  const [tin, setTin] = useState(shift ? jaHM(shift.clock_in_at) : "07:00");
+  const [tout, setTout] = useState(shift ? jaHM(shift.clock_out_at) : "16:00");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const mins = (() => { const [a, b] = tin.split(":").map(Number), [c, d] = tout.split(":").map(Number); return (c * 60 + d) - (a * 60 + b); })();
+  async function save() {
+    setErr(null);
+    if (!workerId || !projectId || !date || !tin || !tout) { setErr("Pick the worker, the project, the day and both times."); return; }
+    if (mins <= 0) { setErr("The time out must be after the time in (same day)."); return; }
+    if (!note.trim()) { setErr(shift ? "Say why the time is changed." : "Say why the time is entered by hand (for example: forgot to clock in)."); return; }
+    setBusy(true);
+    try {
+      if (shift) await editShift(shift.id, projectId, jaTime(date, tin), jaTime(date, tout), note.trim());
+      else await manualShift(workerId, projectId, jaTime(date, tin), jaTime(date, tout), note.trim());
+      onSaved(shift ? "Times changed. It waits for approval again if it was approved." : "Time added. It waits for approval like any other day.");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not save."); setBusy(false); }
+  }
+  return (
+    <Shell title={shift ? `Change times: ${wname(shift.workers)}` : "Add time by hand"} onClose={onClose}>
+      <p className="text-sm text-slate-600 dark:text-slate-400">{shift ? "Fix the day, the times or the project. The reason is kept with the shift." : "For a day the worker did not clock in (today or any day before). It is marked \"entered by hand\"."}</p>
+      {!shift && (
+        <select value={workerId} onChange={(e) => setWorkerId(e.target.value)} className={`${input} w-full`}>
+          <option value="">Pick the worker…</option>
+          {workers.map((w) => <option key={w.id} value={w.id}>{wname(w)}{w.employee_id ? ` · ${w.employee_id}` : ""}</option>)}
+        </select>
+      )}
+      <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={`${input} w-full`}>
+        <option value="">Pick the project…</option>
+        {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="text-xs text-slate-500">Day<input type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} className={`${input} mt-1 w-full`} /></label>
+        <label className="text-xs text-slate-500">Time in<input type="time" value={tin} onChange={(e) => setTin(e.target.value)} className={`${input} mt-1 w-full`} /></label>
+        <label className="text-xs text-slate-500">Time out<input type="time" value={tout} onChange={(e) => setTout(e.target.value)} className={`${input} mt-1 w-full`} /></label>
+      </div>
+      {mins > 0 && <div className="text-sm text-slate-700 dark:text-slate-300">= <b>{hoursWords(mins)}</b></div>}
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={shift ? "Why? e.g. clocked out late by mistake" : "Why? e.g. forgot to clock in, no phone"} className={`${input} w-full`} />
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      <button onClick={() => void save()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Saving…" : shift ? "Save the change" : "Add the time"}</button>
+      <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
+    </Shell>
   );
 }
