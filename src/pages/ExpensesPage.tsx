@@ -9,7 +9,7 @@ import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
 import { showPrintPreview } from "../lib/printPreview";
 import { useProjectContext } from "../context/ProjectContext";
-import { postExpenseToLedger, expenseLedgerState, POSTABLE_STATUSES, isPaidFromAccount, detectNonJmdCurrency } from "../lib/expensePosting";
+import { postExpenseToLedger, expenseLedgerState, POSTABLE_STATUSES, isPaidFromAccount, detectNonJmdCurrency, unpostExpense } from "../lib/expensePosting";
 import type { LedgerAccount, PostExpenseResult } from "../lib/expensePosting";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
@@ -79,6 +79,7 @@ type Expense = {
   receipt_number?: string | null;
   paid_from_account_id: string | null;
   gl_transaction_id: string | null;
+  field_payment_id?: string | null;   // made by a field payment: corrected on the field payment
   created_at: string;
   projects?: { name: string } | null;
   workers?: { first_name: string; last_name: string } | null;
@@ -427,14 +428,23 @@ export default function ExpensesPage() {
         receipt_number: form.receipt_number.trim() || null,
         line_items: fromRows(form.items),
       };
-      // Once an expense is on the ledger, what the entry was built from can't be changed here (that would leave the books wrong).
+      // An expense already in the books: changing what the entry was built from takes the old entry OUT of the books (a reversing
+      // entry, the trail stays), then the corrected expense is saved and posted again below.
       if (editingExpense?.gl_transaction_id) {
         const e0 = editingExpense;
-        const moneyChanged = Number(payload.amount) !== Number(e0.amount) || (payload.expense_date ?? null) !== (e0.expense_date ?? null)
-          || (payload.chart_account_id ?? null) !== (effectiveAccountId(e0) ?? null) || (payload.project_id ?? null) !== (e0.project_id ?? null)
-          || (payload.paid_from_account_id ?? null) !== (e0.paid_from_account_id ?? null);
-        if (moneyChanged) throw new Error("This expense is already posted to the ledger, so its amount, date, category, project and Paid-from account can't be changed here. Reverse the ledger entry first.");
-        if (!POSTABLE_STATUSES.includes(payload.status)) throw new Error("This expense is already posted to the ledger, so it can't go back to pending or rejected. Reverse the ledger entry first.");
+        const changed = [
+          Number(payload.amount) !== Number(e0.amount) && "amount",
+          (payload.expense_date ?? null) !== (e0.expense_date ?? null) && "date",
+          (payload.chart_account_id ?? null) !== (effectiveAccountId(e0) ?? null) && "category",
+          (payload.project_id ?? null) !== (e0.project_id ?? null) && "project",
+          (payload.paid_from_account_id ?? null) !== (e0.paid_from_account_id ?? null) && "paid from",
+          !POSTABLE_STATUSES.includes(payload.status) && "status",
+        ].filter(Boolean) as string[];
+        if (changed.length > 0) {
+          if (e0.field_payment_id) throw new Error("This expense comes from a field payment. Change it on the field payment (Field Payments) and the books follow.");
+          if (!window.confirm(`This expense is in the books. Saving takes the old entry out of the books and puts the corrected one in (${changed.join(", ")} changed). Continue?`)) { setSaving(false); return; }
+          await unpostExpense(e0.id, `Expense corrected: ${changed.join(", ")} changed`);
+        }
       }
       let savedId: string | undefined = editingExpense?.id;
       if (editingExpense) {
@@ -480,10 +490,11 @@ export default function ExpensesPage() {
   // every other delete action (invoices, POs, contracts, field payments).
   async function deleteExpense(exp: Expense) {
     if (exp.gl_transaction_id) {
-      setLedgerNote({ kind: "error", text: "This expense is posted to the ledger, so it can't be deleted here. Reverse the ledger entry first." });
-      return;
-    }
-    if (!window.confirm(`Delete expense "${exp.description || "this expense"}"? This cannot be undone.`)) return;
+      if (exp.field_payment_id) { setLedgerNote({ kind: "error", text: "This expense comes from a field payment. Delete or cancel the field payment instead, and the books follow." }); return; }
+      if (!window.confirm(`Delete expense "${exp.description || "this expense"}"? It is in the books: it will be taken out of the books (a reversing entry) and then deleted.`)) return;
+      try { await unpostExpense(exp.id, "Expense deleted"); }
+      catch (ue: unknown) { setLedgerNote({ kind: "error", text: "Not deleted: " + (ue instanceof Error ? ue.message : "could not take it out of the books") }); return; }
+    } else if (!window.confirm(`Delete expense "${exp.description || "this expense"}"? This cannot be undone.`)) return;
     const { error: e } = await supabase.from("expenses").delete().eq("id", exp.id);
     if (e) { setError(e.message); return; }
     setExpenses(prev => prev.filter(x => x.id !== exp.id));
@@ -508,8 +519,11 @@ export default function ExpensesPage() {
   async function updateStatus(id: string, status: string) {
     const exp = expenses.find(x => x.id === id);
     if (exp?.gl_transaction_id && !POSTABLE_STATUSES.includes(status)) {
-      setLedgerNote({ kind: "error", text: "This expense is posted to the ledger, so it can't go back to pending or rejected. Reverse the ledger entry first." });
-      return;
+      if (exp.field_payment_id) { setLedgerNote({ kind: "error", text: "This expense comes from a field payment. Change it on the field payment instead." }); return; }
+      if (!window.confirm("This expense is in the books. Moving it back takes it out of the books (a reversing entry). Continue?")) return;
+      try { await unpostExpense(id, `Expense set to ${status}`); }
+      catch (ue: unknown) { setLedgerNote({ kind: "error", text: "Not changed: " + (ue instanceof Error ? ue.message : "could not take it out of the books") }); return; }
+      setExpenses(prev => prev.map(x => x.id === id ? { ...x, gl_transaction_id: null } : x));
     }
     const { error: e } = await supabase.from("expenses").update({ status }).eq("id", id);
     if (e) { setLedgerNote({ kind: "error", text: "Couldn't update the expense: " + e.message }); return; }

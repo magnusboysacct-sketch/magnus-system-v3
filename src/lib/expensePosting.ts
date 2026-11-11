@@ -12,6 +12,14 @@ import { createGLTransaction, postGLTransaction } from "./accounting";
 
 export const POSTABLE_STATUSES = ["approved", "reimbursed"];
 
+// Take a booked expense OUT of the books so it can be corrected (expense_unpost, migration 20261002000000): a reversing
+// entry is posted, the old one is marked voided (the trail stays) and the expense is no longer linked to it.
+// Only entries Magnus made from this expense; never imported ones. Field-payment expenses are changed on the field payment.
+export async function unpostExpense(expenseId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("expense_unpost", { p_expense: expenseId, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
 export interface LedgerAccount {
   id: string;
   code: string;
