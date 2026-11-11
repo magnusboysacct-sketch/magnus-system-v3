@@ -8,6 +8,7 @@ import { showPrintPreview } from "../lib/printPreview";
 import { generateReceiptHTML } from "../lib/receiptHtml";
 import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getAdvancesSoFar, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 import { useProjectContext } from "../context/ProjectContext";
+import { isPaidFromAccount } from "../lib/expensePosting";
 import { SimpleIDScanner } from "./SimpleIDScanner";
 import html2canvas from "html2canvas";
 import {
@@ -160,6 +161,13 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectBalance, setProjectBalance] = useState<number|null>(null);
 
+  // "Charge to" (expense account) and "Paid from" (cash / bank): the database puts the payment in Expenses and the books with them
+  // (migration 20261001000000). The last choice is remembered on this device.
+  type Acct={id:string;code:string;name:string;type:string;subtype:string|null;parent_id:string|null;is_active:boolean|null};
+  const [accts,setAccts]=useState<Acct[]>([]);
+  const [chargeTo,setChargeTo]=useState("");
+  const [paidFrom,setPaidFrom]=useState("");
+  const [bookNote,setBookNote]=useState<string|null>(null);
   // Clocked time used for this payment (from Clock In → Approve & pay, or found when the worker is picked). Those shifts are marked paid on save.
   const [clock, setClock] = useState<FromClock|null>(prefillWorker?.fromClock||null);
   const [clockFound, setClockFound] = useState<{key:string;use:FromClock|null;waiting:number;off:boolean}|null>(null);
@@ -217,6 +225,22 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     if(!companyId)return;
     supabase.from("workers").select("id,first_name,last_name,phone,id_number,address,employee_id").eq("company_id",companyId).eq("status","active").order("first_name",{ascending:true})
       .then(({data})=>setWorkerList((data||[]) as any[]));
+  },[companyId]);
+
+  useEffect(()=>{
+    if(!companyId)return;
+    supabase.from("chart_of_accounts").select("id,code,name,type,subtype,parent_id,is_active").eq("company_id",companyId).order("code")
+      .then(({data})=>{
+        const list=(data||[]) as Acct[];
+        setAccts(list);
+        const groups=new Set(list.filter(a=>a.is_active!==false&&a.parent_id).map(a=>a.parent_id as string));
+        const ok=(id:string|null)=>!!id&&list.some(a=>a.id===id&&a.is_active!==false&&!groups.has(a.id));
+        let c:string|null=null,f:string|null=null;
+        try{c=localStorage.getItem(`fp_charge_${companyId}`);f=localStorage.getItem(`fp_paidfrom_${companyId}`);}catch{/* no storage */}
+        const labour=list.find(a=>a.type==="expense"&&a.is_active!==false&&!groups.has(a.id)&&/direct lab/i.test(a.name));
+        setChargeTo(ok(c)?c!:labour?.id||"");
+        setPaidFrom(ok(f)?f!:"");
+      });
   },[companyId]);
 
   // Picking a registered worker fills the details and links the payment; "casual labour" keeps a typed name with no link.
@@ -430,10 +454,13 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         milestone_name:selectedMilestone?.milestone_name||null,
         task_name:form.task_name||null,
         signature_url:form.signature_data||null,
+        charge_account_id:chargeTo||null,
+        paid_from_account_id:paidFrom||null,
       }).select().maybeSingle();
       if(pe)throw pe;
       if(!payment)throw new Error("Failed to save payment");
       setSavedPaymentId(payment.id);
+      try{localStorage.setItem(`fp_charge_${companyId}`,chargeTo);localStorage.setItem(`fp_paidfrom_${companyId}`,paidFrom);}catch{/* no storage */}
 
       // paid from clocked time: link those shifts to this payment so they can't be paid twice
       if(clock?.shift_ids.length){
@@ -472,12 +499,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         }
       }
 
-      // Log expense
-      await supabase.from("expenses").insert({
-        company_id:companyId,project_id:form.project_id||null,
-        description:`${form.payment_type==="advance"?"Advance":"Field Payment"} — ${form.worker_name} (${workLabel})`,
-        amount:amount,expense_date:todayLocal(),status:"approved",
-      });
+      // The expense line and the books entry are made by the database (field_payment_sync). Show what happened.
+      const {data:after}=await supabase.from("field_payments").select("ledger_note,expense_id").eq("id",payment.id).maybeSingle();
+      setBookNote(after?.ledger_note||(after?.expense_id?"In Expenses and in the books.":null));
 
       setStep("done");
     } catch(e:any){setError(e.message);}
@@ -898,6 +922,33 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 </>
               )}
 
+              {(()=>{
+                const groups=new Set(accts.filter(a=>a.is_active!==false&&a.parent_id).map(a=>a.parent_id as string));
+                const leaf=accts.filter(a=>a.is_active!==false&&!groups.has(a.id));
+                const exp=leaf.filter(a=>a.type==="expense");
+                const money=leaf.filter(a=>isPaidFromAccount(a));
+                const sel="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50";
+                return (
+                  <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-3 space-y-2">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-500">For the books</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Charge to</label>
+                        <select value={chargeTo} onChange={e=>setChargeTo(e.target.value)} className={sel}>
+                          <option value="">Choose later…</option>
+                          {exp.map(a=><option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                        </select></div>
+                      <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Paid from</label>
+                        <select value={paidFrom} onChange={e=>setPaidFrom(e.target.value)} className={sel}>
+                          <option value="">Choose later…</option>
+                          {money.filter(a=>a.type==="asset").map(a=><option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                          {money.some(a=>a.type==="liability")&&<optgroup label="Owed (card / payable)">{money.filter(a=>a.type==="liability").map(a=><option key={a.id} value={a.id}>{a.code} {a.name}</option>)}</optgroup>}
+                        </select></div>
+                    </div>
+                    <div className="text-[10px] text-slate-500">Your own workers: Direct Labour. A contractor who takes a whole job for a price: Subcontractor. Paid from: the cash or bank the money came out of. {(!chargeTo||!paidFrom)&&"Left empty, it still goes into Expenses and the office picks them there."}</div>
+                  </div>
+                );
+              })()}
+
               <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Payment Method</label>
                 <div className="grid grid-cols-4 gap-2">
                   {PAYMENT_METHODS.map(m=>(
@@ -989,6 +1040,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 </div>
                 <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-0.5">Receipt #{receiptNumber}</div>
                 <div className="text-[11px] text-slate-800 dark:text-slate-500">Saved · Generate receipt anytime from payment list</div>
+                {bookNote&&<div className={`text-[11px] mt-1 font-semibold ${bookNote.startsWith("In Expenses and in the books")?"text-emerald-600 dark:text-emerald-400":"text-amber-600 dark:text-amber-400"}`}>📒 {bookNote}</div>}
               </div>
             </div>
 

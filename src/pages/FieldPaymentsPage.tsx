@@ -21,6 +21,8 @@ import {
 
 type Payment = {
   id: string;
+  ledger_note?: string|null;      // why it is not in the books yet (migration 20261001000000)
+  expense_id?: string|null;
   worker_name: string;
   worker_id_number: string|null;
   worker_phone: string|null;
@@ -577,6 +579,7 @@ export default function FieldPaymentsPage() {
                     {label:"Days",         value:selected.days_worked?`${selected.days_worked} days`:null},
                     {label:"Hours",        value:selected.hours_worked?`${selected.hours_worked} hrs`:null},
                     {label:"Notes",        value:selected.notes},
+                    {label:"Books",        value:selected.ledger_note||(selected.expense_id?"In Expenses and in the books":null)},
                   ].filter(r=>r.value).map(r=>(
                     <div key={r.label} className="flex items-center justify-between px-4 py-2.5">
                       <span className="text-[10px] text-slate-500 dark:text-slate-600 uppercase tracking-wider">{r.label}</span>
