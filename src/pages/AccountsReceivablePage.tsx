@@ -51,6 +51,9 @@ import { printInvoiceFresh } from "../components/InvoiceDocument";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import { SeenBadge, SeenDetail } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
+import InvoiceLinesModal from "../components/InvoiceLinesModal";
+// who may change an invoice's lines (same as invoice_save_lines in the database)
+const LINE_EDIT_ROLES = ["director", "admin", "estimator", "office_user", "accountant"];
 import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 
 const fmtAdvance = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
@@ -151,6 +154,7 @@ export default function AccountsReceivablePage() {
   });
 
   const [editingInvoice, setEditingInvoice] = useState<ClientInvoice | null>(null);
+  const [linesInvoice, setLinesInvoice] = useState<ClientInvoice | null>(null);   // "Change lines" (extra work on the same invoice)
   const [editForm, setEditForm] = useState({
     invoice_date: "",
     due_date: "",
@@ -986,6 +990,7 @@ export default function AccountsReceivablePage() {
                     <div className="flex items-center gap-2">
                       <FileText size={16} className="text-slate-600 dark:text-slate-400" />
                       <span className="font-mono text-sm font-medium text-slate-900 dark:text-slate-100">{inv.invoice_number}</span>
+                      {Number(inv.revision || 0) > 0 && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800" title={inv.revision_note || "Revised invoice"}>Rev {inv.revision}</span>}
                     </div>
                     {/* Banking step 3a: is this invoice in the books (receivable + income), and if not, why. */}
                     {inv.gl_transaction_id
@@ -1063,6 +1068,12 @@ export default function AccountsReceivablePage() {
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
                         >
                           Mark as sent
+                        </button>
+                      )}
+                      {LINE_EDIT_ROLES.includes(userRole || "") && inv.status !== "paid" && inv.status !== "cancelled" && (
+                        <button onClick={() => setLinesInvoice(inv)} title="Change the lines (add extra work)"
+                          className="px-2 py-1 rounded-lg text-[11px] font-semibold text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">
+                          ✏️ Lines
                         </button>
                       )}
                       <button
@@ -1317,6 +1328,7 @@ export default function AccountsReceivablePage() {
               <div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Invoice Number</div>
                 <div className="font-mono font-semibold text-slate-900 dark:text-slate-100">{selectedInvoice.invoice_number}</div>
+                {Number(selectedInvoice.revision || 0) > 0 && <div className="text-xs font-semibold text-amber-700">Revised invoice · Rev {selectedInvoice.revision}{selectedInvoice.revised_at ? ` · ${new Date(selectedInvoice.revised_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}{selectedInvoice.revision_note ? ` · ${selectedInvoice.revision_note}` : ""}</div>}
               </div>
               <div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Status</div>
@@ -1539,6 +1551,12 @@ export default function AccountsReceivablePage() {
                 <Printer size={14} />
                 {printingInvoice ? "Preparing…" : "Print / Save as PDF"}
               </button>
+              {LINE_EDIT_ROLES.includes(userRole || "") && selectedInvoice.status !== "paid" && selectedInvoice.status !== "cancelled" && (
+                <button onClick={() => { setShowDetailModal(false); setLinesInvoice(selectedInvoice); }}
+                  className="flex items-center gap-2 rounded-lg border border-cyan-300 dark:border-cyan-500/40 px-4 py-2 text-sm font-semibold text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">
+                  ✏️ Change lines / add extra work
+                </button>
+              )}
               {selectedInvoice.status === "draft" && canMarkSent(userRole) && (
                 <button
                   onClick={() => openMarkSentModal(selectedInvoice)}
@@ -2001,6 +2019,11 @@ ${companyDisplayName(companySettings?.company_name)}`}
             </button>
           </div>
         </div>
+      )}
+
+      {linesInvoice && (
+        <InvoiceLinesModal invoice={linesInvoice} onClose={() => setLinesInvoice(null)}
+          onSaved={(m) => { setLinesInvoice(null); void loadInvoices(); alert(m); }} />
       )}
 
       {/* Edit Invoice Modal */}

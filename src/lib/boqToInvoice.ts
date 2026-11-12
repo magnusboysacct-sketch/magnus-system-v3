@@ -61,6 +61,7 @@ export interface InvoiceLineDraft {
   amount: number;
   notes: string | null;
   line_name?: string | null; // only on lines built with carryNames
+  source_boq_section_item_id?: string | null; // itemized lines: the BOQ item it came from (what is billed / what is left)
 }
 
 export const MAX_MULTIPLIER = 1000;
@@ -217,6 +218,7 @@ export function buildBoqInvoiceLines(
         amount: round2(quantity * rate),
         notes: (it.description || "").trim() || null,
         ...(opts.carryNames && (it.line_name || "").trim() ? { line_name: (it.line_name || "").trim() } : {}),
+        ...(it.id ? { source_boq_section_item_id: String(it.id) } : {}),
       });
     }
   }
@@ -408,20 +410,25 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
     });
 
     try {
-      await createInvoiceLineItems(
-        lines.map((l) => ({
-          invoice_id: invoice.id,
-          company_id: project.company_id as string,
-          line_number: l.line_number,
-          description: l.description,
-          quantity: l.quantity,
-          unit: l.unit,
-          rate: l.rate,
-          amount: l.amount,
-          notes: l.notes,
-          ...(l.line_name ? { line_name: l.line_name } : {}),
-        })),
-      );
+      const rows = (withSource: boolean) => lines.map((l) => ({
+        invoice_id: invoice.id,
+        company_id: project.company_id as string,
+        line_number: l.line_number,
+        description: l.description,
+        quantity: l.quantity,
+        unit: l.unit,
+        rate: l.rate,
+        amount: l.amount,
+        notes: l.notes,
+        ...(l.line_name ? { line_name: l.line_name } : {}),
+        ...(withSource && l.source_boq_section_item_id ? { source_boq_section_item_id: l.source_boq_section_item_id } : {}),
+      }));
+      // The BOQ item link needs migration 20261003000000; without it the lines are saved without the link.
+      try { await createInvoiceLineItems(rows(true)); }
+      catch (srcError: unknown) {
+        if (!/source_boq_section_item_id/i.test(srcError instanceof Error ? srcError.message : String((srcError as { message?: string })?.message ?? ""))) throw srcError;
+        await createInvoiceLineItems(rows(false));
+      }
     } catch (lineError: any) {
       const { error: cleanupError } = await supabase.from("client_invoices").delete().eq("id", invoice.id);
       return {

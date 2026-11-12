@@ -90,6 +90,12 @@ export default function InvoiceDocument({ invoice, lineItems, payments, client, 
           <div style={{ flex: "0 0 auto", textAlign: "right" }}>
             <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 2 }}>INVOICE</div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{invoice?.invoice_number || ""}</div>
+            {Number(invoice?.revision || 0) > 0 && (
+              <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, color: "#b45309" }}>
+                REVISED INVOICE · Rev {invoice.revision}{invoice?.revised_at ? ` · ${fmtDate(String(invoice.revised_at).slice(0, 10))}` : ""}
+                <div style={{ fontWeight: 400, color: "#6b7280" }}>Replaces the earlier copy of this invoice</div>
+              </div>
+            )}
           </div>
         </div>
 

@@ -26,6 +26,10 @@ export interface ClientInvoice {
   /** Banking step 3a: the books entry for this invoice, or why it isn't in the books yet. */
   gl_transaction_id?: string | null;
   ledger_note?: string | null;
+  /** A sent invoice whose lines were changed: "Revised invoice, Rev N" (migration 20261003000000). */
+  revision?: number | null;
+  revised_at?: string | null;
+  revision_note?: string | null;
 }
 
 export interface ClientInvoiceLineItem {
@@ -41,6 +45,8 @@ export interface ClientInvoiceLineItem {
   notes?: string | null;
   // The name (e.g. a beneficiary) of the BOQ item this line was billed for; printed under the description when set.
   line_name?: string | null;
+  // The BOQ item (boq_section_items) this line came from: what is billed and what is left (migration 20261003000000).
+  source_boq_section_item_id?: string | null;
   boq_item_id?: string | null;
   milestone_id?: string | null;
   billing_item_id?: string | null;
