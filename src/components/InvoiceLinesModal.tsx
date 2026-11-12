@@ -4,8 +4,8 @@
 // becomes "Revised invoice, Rev N". A paid or cancelled invoice is not changed.
 import { useEffect, useMemo, useState } from "react";
 import {
-  fetchBoqUnbilled, fetchInvoiceLinesForEdit, fetchProjectBoqs, lineAmount, newKey, r2, saveInvoiceLines,
-  type EditLine, type ProjectBoq, type UnbilledItem,
+  fetchBillableExpenses, fetchBoqUnbilled, fetchInvoiceLinesForEdit, fetchProjectBoqs, lineAmount, newKey, r2, saveInvoiceLines,
+  type BillableExpense, type EditLine, type ProjectBoq, type UnbilledItem,
 } from "../lib/invoiceEdit";
 
 type Inv = {
@@ -27,6 +27,7 @@ export default function InvoiceLinesModal({ invoice, onClose, onSaved }: { invoi
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [boqOpen, setBoqOpen] = useState(false);
+  const [expOpen, setExpOpen] = useState(false);       // "+ Add billable expenses"
   const [ratesOpen, setRatesOpen] = useState(false);   // "Update rates from BOQ"
 
   useEffect(() => {
@@ -96,13 +97,20 @@ export default function InvoiceLinesModal({ invoice, onClose, onSaved }: { invoi
                     <div className="text-[10px] text-slate-500">Amount<div className="py-1.5 text-sm font-bold text-slate-800 dark:text-slate-200">{money(lineAmount(l))}</div></div>
                   </div>
                   {l.source_boq_section_item_id && <div className="pl-7 text-[10px] text-cyan-700 dark:text-cyan-400">From the BOQ</div>}
+                  {l.source_expense_id && <div className="pl-7 text-[10px] text-emerald-700 dark:text-emerald-400">🧾 Receipt billed back to the client</div>}
+                  {l.source_bill_id && <div className="pl-7 text-[10px] text-emerald-700 dark:text-emerald-400">📄 Bill billed back to the client</div>}
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">
                 <button onClick={addBlank} className={`${btn} border border-slate-300 text-slate-700 dark:text-slate-300`}>+ Add a line</button>
-                {invoice.project_id && <button onClick={() => { setBoqOpen((o) => !o); setRatesOpen(false); }} className={`${btn} bg-cyan-600 hover:bg-cyan-500 text-white`}>+ Add from BOQ</button>}
-                {invoice.project_id && <button onClick={() => { setRatesOpen((o) => !o); setBoqOpen(false); }} className={`${btn} border border-cyan-500 text-cyan-700 dark:text-cyan-400`}>↻ Update rates from BOQ</button>}
+                {invoice.project_id && <button onClick={() => { setBoqOpen((o) => !o); setRatesOpen(false); setExpOpen(false); }} className={`${btn} bg-cyan-600 hover:bg-cyan-500 text-white`}>+ Add from BOQ</button>}
+                {invoice.project_id && <button onClick={() => { setExpOpen((o) => !o); setBoqOpen(false); setRatesOpen(false); }} className={`${btn} border border-emerald-500 text-emerald-700 dark:text-emerald-400`}>🧾 Add billable expenses</button>}
+                {invoice.project_id && <button onClick={() => { setRatesOpen((o) => !o); setBoqOpen(false); setExpOpen(false); }} className={`${btn} border border-cyan-500 text-cyan-700 dark:text-cyan-400`}>↻ Update rates from BOQ</button>}
               </div>
+              {expOpen && invoice.project_id && (
+                <ExpensePicker projectId={invoice.project_id} current={lines}
+                  onAdd={(add) => { setLines((ls) => [...ls, ...add]); setExpOpen(false); }} />
+              )}
               {ratesOpen && invoice.project_id && (
                 <RatesFromBoq projectId={invoice.project_id} current={lines}
                   onApply={(changes) => {
@@ -137,6 +145,96 @@ export default function InvoiceLinesModal({ invoice, onClose, onSaved }: { invoi
         </>)}
         <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
       </div>
+    </div>
+  );
+}
+
+// "Add billable expenses": the project's receipts ticked "Bill this to the client" and not billed yet. Each comes in with the
+// items on the receipt (when they add up to the receipt), or as one line; the receipt's markup is added to the rates.
+function ExpensePicker({ projectId, current, onAdd }: { projectId: string; current: EditLine[]; onAdd: (lines: EditLine[]) => void }) {
+  const [list, setList] = useState<BillableExpense[]>([]);
+  const [on, setOn] = useState<Record<string, boolean>>({});
+  const [asOne, setAsOne] = useState<Record<string, boolean>>({});
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchBillableExpenses(projectId).then((r) => { setList(r); setLoading(false); })
+      .catch((e) => { setErr(e instanceof Error ? e.message : "Could not load the receipts."); setLoading(false); });
+  }, [projectId]);
+  const taken = new Set(current.flatMap((l) => [l.source_expense_id, l.source_bill_id]).filter(Boolean) as string[]);
+  const shown = list.filter((e) => !taken.has(e.id));
+  const itemsOf = (e: BillableExpense) => (e.line_items || []).filter((i) => (i.description || "").trim() && (Number(i.amount) || (Number(i.quantity) || 0) * (Number(i.unit_price) || 0)) > 0);
+  const itemsAddUp = (e: BillableExpense) => {
+    const its = itemsOf(e);
+    if (its.length === 0) return false;
+    const sum = its.reduce((s, i) => s + (Number(i.amount) || r2((Number(i.quantity) || 1) * (Number(i.unit_price) || 0))), 0) + (e.tax || 0);
+    return Math.abs(sum - e.amount) < 1;
+  };
+  const day = (d: string | null) => (d ? new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
+
+  function add() {
+    const out: EditLine[] = [];
+    for (const e of shown) {
+      if (!on[e.id]) continue;
+      const f = 1 + (e.bill_markup_percent || 0) / 100;
+      const one = asOne[e.id] ?? !itemsAddUp(e);
+      const note = [e.vendor, e.receipt_number ? `${e.kind === "bill" ? "bill" : "receipt"} ${e.receipt_number}` : "", day(e.expense_date)].filter(Boolean).join(" · ");
+      const link = e.kind === "bill" ? { source_bill_id: e.id } : { source_expense_id: e.id };
+      if (one) {
+        out.push({ key: newKey(), description: (e.kind === "bill" ? `${e.vendor || "Supplier"} – ${e.description}` : (e.description || e.vendor || "Expense")).trim(),
+          quantity: "1", unit: "lot", rate: String(r2(e.amount * f)), notes: note, line_name: "", source_boq_section_item_id: null, ...link });
+      } else {
+        for (const i of itemsOf(e)) {
+          const q = Number(i.quantity) || 1;
+          const unit = Number(i.unit_price) || r2((Number(i.amount) || 0) / q);
+          out.push({ key: newKey(), description: (i.description || "").trim(), quantity: String(q), unit: "ea", rate: String(r2(unit * f)),
+            notes: note, line_name: "", source_boq_section_item_id: null, ...link });
+        }
+        if (e.tax > 0) out.push({ key: newKey(), description: "GCT on the bill", quantity: "1", unit: "lot", rate: String(r2(e.tax * f)),
+          notes: note, line_name: "", source_boq_section_item_id: null, ...link });
+      }
+    }
+    if (out.length === 0) { setErr("Tick at least one receipt."); return; }
+    onAdd(out);
+  }
+
+  return (
+    <div className="rounded-xl border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-500/5 p-3 space-y-2">
+      <div className="text-sm font-bold text-slate-800 dark:text-slate-100">Receipts and bills to bill back to the client</div>
+      {loading ? <div className="text-sm text-slate-500">Loading…</div>
+        : shown.length === 0 ? <div className="text-sm text-slate-500">Nothing waiting. Tick "Bill this to the client" on a receipt (Expenses) or a bill (Accounts Payable) for this project.</div>
+        : (
+        <div className="divide-y divide-slate-200 dark:divide-white/[0.06] rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117]">
+          {shown.map((e) => {
+            const its = itemsOf(e);
+            const one = asOne[e.id] ?? !itemsAddUp(e);
+            const f = 1 + (e.bill_markup_percent || 0) / 100;
+            return (
+              <div key={`${e.kind}:${e.id}`} className="p-2 space-y-1 text-sm">
+                <label className="flex items-start gap-2">
+                  <input type="checkbox" className="mt-1 h-4 w-4" checked={!!on[e.id]} onChange={(ev) => setOn((m) => ({ ...m, [e.id]: ev.target.checked }))} />
+                  <span className="flex-1">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{e.kind === "bill" ? "📄 " : "🧾 "}{e.kind === "bill" ? `${e.vendor || "Supplier"} – ${e.description}` : (e.description || e.vendor || "Expense")}</span>
+                    <span className="block text-xs text-slate-500">{[e.vendor, day(e.expense_date), e.receipt_number && `#${e.receipt_number}`].filter(Boolean).join(" · ")}</span>
+                    <span className="block text-xs text-slate-700 dark:text-slate-300">{e.kind === "bill" ? "Bill" : "Receipt"} {money(e.amount)}{e.bill_markup_percent ? ` + ${e.bill_markup_percent}% = ${money(r2(e.amount * f))}` : ""}</span>
+                  </span>
+                </label>
+                {on[e.id] && its.length > 0 && (
+                  <div className="pl-6 space-y-1">
+                    <div className="flex gap-3 text-xs">
+                      <label className="flex items-center gap-1"><input type="radio" checked={!one} onChange={() => setAsOne((m) => ({ ...m, [e.id]: false }))} /> Its {its.length} items</label>
+                      <label className="flex items-center gap-1"><input type="radio" checked={one} onChange={() => setAsOne((m) => ({ ...m, [e.id]: true }))} /> One line</label>
+                    </div>
+                    {!itemsAddUp(e) && <div className="text-[10px] text-amber-700">The items don't add up to the total (a missing item?). One line is safer.</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {shown.length > 0 && <button onClick={add} className={`${btn} w-full bg-emerald-600 hover:bg-emerald-500 text-white`}>Add the ticked ones to the invoice</button>}
     </div>
   );
 }

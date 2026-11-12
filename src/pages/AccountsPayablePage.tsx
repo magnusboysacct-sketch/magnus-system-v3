@@ -23,6 +23,7 @@ import { BillFromPOModal } from "../components/BillFromPOModal";
 import { useSearchParams } from "react-router-dom";
 import { showBillReceipt } from "../lib/billReceipt";
 import { resolveFileUrl } from "../lib/storageRefs";
+import { setBillBillable } from "../lib/bills";
 import {
   approveBill, disputeBill, setBillFile, uploadBillFile, fetchAdvances, fetchBillPayments, fetchCostAccounts, fetchUnsignedCashPayments, needsProof, undoBillPayment, PAY_METHODS,
   type BillPayment, type CostAccount, type SupplierAdvance, type UnsignedPayment,
@@ -65,6 +66,57 @@ const STATUS_COLOR: Record<string, "amber" | "cyan" | "green" | "red"> = {
   pending: "amber", approved: "cyan", partial: "amber",
   paid: "green", disputed: "red",
 };
+
+// "Bill this to the client": a bill paid for a client shows under "Add billable expenses" on the project's invoice
+// (migration 20261005000000). Reads its own fields, so the page still works before that update is applied.
+function BillToClientBox({ billId, hasProject }: { billId: string; hasProject: boolean }) {
+  const [ready, setReady] = useState(false);
+  const [on, setOn] = useState(false);
+  const [markup, setMarkup] = useState("");
+  const [billedOn, setBilledOn] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.from("supplier_invoices").select("billable, bill_markup_percent").eq("id", billId).maybeSingle();
+      if (!alive || error || !data) return;                     // not available yet: the box stays hidden
+      const d = data as { billable: boolean; bill_markup_percent: number | null };
+      setOn(!!d.billable); setMarkup(d.bill_markup_percent ? String(d.bill_markup_percent) : "");
+      const { data: bl } = await supabase.from("client_invoice_line_items").select("client_invoices!inner(invoice_number, status)").eq("source_bill_id", billId);
+      const hit = ((bl || []) as unknown as { client_invoices: { invoice_number: string; status: string } }[]).find((r) => r.client_invoices?.status !== "cancelled");
+      if (alive) { setBilledOn(hit ? hit.client_invoices.invoice_number : null); setReady(true); }
+    })();
+    return () => { alive = false; };
+  }, [billId]);
+  if (!ready) return null;
+  async function save(nextOn: boolean) {
+    setBusy(true); setNote(null);
+    try { await setBillBillable(billId, nextOn, Math.max(0, Number(markup) || 0)); setOn(nextOn); setNote({ ok: true, text: nextOn ? "Saved. It shows on the project's invoice under Change lines → Add billable expenses." : "Saved." }); }
+    catch (e: unknown) { setNote({ ok: false, text: msg(e) }); }
+    setBusy(false);
+  }
+  return (
+    <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/20 p-3 space-y-2">
+      <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <input type="checkbox" className="h-4 w-4" checked={on} disabled={busy || !!billedOn} onChange={(e) => void save(e.target.checked)} />
+        📄 Bill this to the client (they pay us back)
+      </label>
+      {!hasProject && !on && <div className="text-[11px] text-amber-600">Set the project on this bill first.</div>}
+      {on && !billedOn && (
+        <div className="flex items-end gap-2">
+          <label className="text-[11px] text-slate-500">Markup % (optional)
+            <input type="number" inputMode="decimal" min="0" value={markup} onChange={(e) => setMarkup(e.target.value)} placeholder="0"
+              className="mt-1 w-28 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#111820] px-2 py-1.5 text-sm text-slate-800 dark:text-slate-200" />
+          </label>
+          <button onClick={() => void save(true)} disabled={busy} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">Save markup</button>
+        </div>
+      )}
+      {billedOn && <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Billed to the client on {billedOn}.</div>}
+      {note && <div className={`text-xs ${note.ok ? "text-emerald-700" : "text-red-600"}`}>{note.text}</div>}
+    </div>
+  );
+}
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
@@ -537,6 +589,7 @@ export default function AccountsPayablePage() {
             {selectedBill.projects?.name && (
               <div className="text-xs text-slate-500 dark:text-slate-600">Project: <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedBill.projects.name}</span></div>
             )}
+            <BillToClientBox key={selectedBill.id} billId={selectedBill.id} hasProject={!!selectedBill.project_id} />
 
             <div>
               <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">

@@ -80,6 +80,8 @@ type Expense = {
   paid_from_account_id: string | null;
   gl_transaction_id: string | null;
   field_payment_id?: string | null;   // made by a field payment: corrected on the field payment
+  billable?: boolean | null;          // "Bill this to the client" (migration 20261004000000)
+  bill_markup_percent?: number | null;
   created_at: string;
   projects?: { name: string } | null;
   workers?: { first_name: string; last_name: string } | null;
@@ -195,8 +197,9 @@ export default function ExpensesPage() {
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
     chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "",
-    vendor: "", receipt_number: "", items: [] as ItemRow[],
+    vendor: "", receipt_number: "", items: [] as ItemRow[], billable: false, bill_markup: "",
   });
+  const [billedOn, setBilledOn] = useState<Record<string, string>>({});   // receipt billed to the client -> invoice number
   // the expense opened to look at (row click), and the receipt picture shown in the form
   const [viewing, setViewing] = useState<Expense | null>(null);
   const [receiptView, setReceiptView] = useState<string | null>(null);
@@ -292,6 +295,16 @@ export default function ExpensesPage() {
       receiptRefs.current = new Map(all.map((x: Expense) => [x.id, x.receipt_url || null]));
       all = await withResolvedUrls(all, ["receipt_url"]);
       setExpenses(all);
+      // receipts billed back to the client: which invoice they are on (cancelled invoices don't count)
+      const billIds = all.filter((x: Expense) => x.billable).map((x: Expense) => x.id);
+      const on: Record<string, string> = {};
+      for (let i = 0; i < billIds.length; i += 200) {
+        const { data: bl } = await supabase.from("client_invoice_line_items").select("source_expense_id, client_invoices!inner(invoice_number, status)")
+          .in("source_expense_id", billIds.slice(i, i + 200));
+        ((bl || []) as unknown as { source_expense_id: string; client_invoices: { invoice_number: string; status: string } }[])
+          .forEach((r) => { if (r.client_invoices?.status !== "cancelled") on[r.source_expense_id] = r.client_invoices?.invoice_number || "an invoice"; });
+      }
+      setBilledOn(on);
       setTotalCount(count ?? null);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
@@ -325,7 +338,7 @@ export default function ExpensesPage() {
     setAccounts((data || []) as LedgerAccount[]);
   }
 
-  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "", vendor: "", receipt_number: "", items: [] as ItemRow[] };
+  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "", vendor: "", receipt_number: "", items: [] as ItemRow[], billable: false, bill_markup: "" };
 
   function openNew() {
     setNotDuplicate(false);
@@ -352,6 +365,8 @@ export default function ExpensesPage() {
       vendor: exp.vendor || "",
       receipt_number: exp.receipt_number || "",
       items: toRows(exp.line_items),
+      billable: !!exp.billable,
+      bill_markup: exp.bill_markup_percent ? String(exp.bill_markup_percent) : "",
     });
     setShowNew(true);
   }
@@ -427,6 +442,8 @@ export default function ExpensesPage() {
         vendor: form.vendor.trim() || null,
         receipt_number: form.receipt_number.trim() || null,
         line_items: fromRows(form.items),
+        // only sent when used, so saving works before the billable-expenses database update is applied
+        ...(form.billable || editingExpense?.billable ? { billable: form.billable && !!form.project_id, bill_markup_percent: Math.max(0, Number(form.bill_markup) || 0) } : {}),
       };
       // An expense already in the books: changing what the entry was built from takes the old entry OUT of the books (a reversing
       // entry, the trail stays), then the corrected expense is saved and posted again below.
@@ -720,7 +737,10 @@ export default function ExpensesPage() {
               ) : filtered.map(e => (
                 <Tr key={e.id} onClick={() => setViewing(e)}>
                   <Td muted>{fmtDate(e.expense_date)}</Td>
-                  <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span></Td>
+                  <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span>
+                    {e.billable && (billedOn[e.id]
+                      ? <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">Billed on {billedOn[e.id]}</span>
+                      : <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">🧾 To bill the client</span>)}</Td>
                   <Td muted>{categoryLabel(e) || "—"}</Td>
                   <Td muted>{e.projects?.name || "—"}</Td>
                   <Td muted>
@@ -1044,6 +1064,25 @@ export default function ExpensesPage() {
               </>
             );
           })()}
+          {/* Bill this receipt back to the client: it then shows under "Add billable expenses" on the project's invoice */}
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/20 p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <input type="checkbox" className="h-4 w-4" checked={form.billable} onChange={e => setForm(f => ({ ...f, billable: e.target.checked }))} />
+              🧾 Bill this to the client (they pay us back)
+            </label>
+            {form.billable && (
+              <div className="grid grid-cols-2 gap-3 items-end">
+                <Field label="Markup % (optional)">
+                  <input type="number" inputMode="decimal" min="0" value={form.bill_markup} onChange={e => setForm(f => ({ ...f, bill_markup: e.target.value }))} placeholder="0"
+                    className="w-full rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#111820] px-3 py-2 text-sm text-slate-800 dark:text-slate-200" />
+                </Field>
+                <div className="text-[11px] text-slate-500 pb-2">
+                  {form.project_id ? "On the project's invoice: Change lines → 🧾 Add billable expenses." : <span className="text-amber-600">Pick the project, so it shows on that project's invoice.</span>}
+                  {editingExpense && billedOn[editingExpense.id] && <span className="block text-emerald-700">Billed on {billedOn[editingExpense.id]}.</span>}
+                </div>
+              </div>
+            )}
+          </div>
           {/* the items on the receipt (a record of what was bought; the Amount above is what goes in the books) */}
           <div className="rounded-xl border border-slate-200 dark:border-white/[0.08] p-3 space-y-2">
             <div className="flex items-center justify-between">

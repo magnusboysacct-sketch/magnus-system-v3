@@ -76,6 +76,12 @@ export async function createBill(bill: NewBill, lines: NewBillLine[], approve: b
   return data as string;
 }
 
+// "Bill this to the client": the bill then shows under "Add billable expenses" on the project's invoice (migration 20261005000000)
+export async function setBillBillable(id: string, on: boolean, markup: number): Promise<void> {
+  const { error } = await supabase.rpc("bill_set_billable", { p_bill: id, p_on: on, p_markup: markup });
+  if (error) throw new Error(errText(error));
+}
+
 export async function approveBill(id: string): Promise<void> {
   const { error } = await supabase.rpc("approve_bill", { p_id: id });
   if (error) throw new Error(errText(error));

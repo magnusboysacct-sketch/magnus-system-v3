@@ -10,7 +10,7 @@ import { Modal, Field, Input, Select, Btn, Textarea } from "./ui";
 import { supabase } from "../lib/supabase";
 import {
   addSupplier, createBill, fetchCostAccounts, fetchSuppliers, fetchWorkerChoices, GCT_RATE, guessCostAccount, matchName,
-  setBillFile, supplierForWorker, uploadBillFile,
+  setBillBillable, setBillFile, supplierForWorker, uploadBillFile,
   type CostAccount, type SupplierOption, type SupplierType, type WorkerOption,
 } from "../lib/bills";
 import { magnusAI } from "../lib/magnusAI";
@@ -47,7 +47,7 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone, inb
   const [linking, setLinking] = useState(false);
   const [accounts, setAccounts] = useState<CostAccount[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  const [form, setForm] = useState({ supplierId: "", number: "", date: today(), due: plusDays(today(), 30), projectId: "", retention: "", gct: "", notes: "" });
+  const [form, setForm] = useState({ supplierId: "", number: "", date: today(), due: plusDays(today(), 30), projectId: "", retention: "", gct: "", notes: "", billable: false, markup: "" });
   const [lines, setLines] = useState<Line[]>([blankLine(1)]);
   const [adding, setAdding] = useState<{ name: string; phone: string; type: SupplierType; address: string } | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -65,7 +65,7 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone, inb
   useEffect(() => {
     if (!open || !companyId) return;
     let alive = true;
-    setForm({ supplierId: "", number: "", date: today(), due: plusDays(today(), 30), projectId: "", retention: "", gct: "", notes: "" });
+    setForm({ supplierId: "", number: "", date: today(), due: plusDays(today(), 30), projectId: "", retention: "", gct: "", notes: "", billable: false, markup: "" });
     setLines([blankLine(1)]);
     setAdding(null);
     setError(null);
@@ -254,6 +254,11 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone, inb
           fileNote = ` The bill is saved, but the picture was not (${e instanceof Error ? e.message : "upload failed"}): open the bill and tap "Attach bill picture".`;
         }
       }
+      // "Bill this to the client": the bill then shows on the project's invoice (Change lines → Add billable expenses)
+      if (form.billable && form.projectId) {
+        try { await setBillBillable(billId, true, Math.max(0, Number(form.markup) || 0)); fileNote += " Marked to bill the client."; }
+        catch (e: unknown) { fileNote += ` Not marked to bill the client (${e instanceof Error ? e.message : "try again"}): open the bill and tick it.`; }
+      }
       const who = suppliers.find((s) => s.id === form.supplierId)?.name ?? "the supplier";
       onDone((approve
         ? `Bill ${form.number.trim()} from ${who} saved and approved (${jmd(total)}). It is in the books.`
@@ -420,6 +425,16 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone, inb
             <Input type="number" inputMode="decimal" min="0" max="50" step="0.5" placeholder="0" value={form.retention}
               onChange={(e) => setForm((f) => ({ ...f, retention: e.target.value }))} />
           </Field>
+        </div>
+
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-500/20 px-3 py-2 space-y-2">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <input type="checkbox" className="h-4 w-4" checked={form.billable} onChange={(e) => setForm((f) => ({ ...f, billable: e.target.checked }))} />
+            📄 Bill this to the client (they pay us back)
+          </label>
+          {form.billable && (form.projectId
+            ? <Field label="Markup % (optional)"><Input type="number" inputMode="decimal" min="0" placeholder="0" value={form.markup} onChange={(e) => setForm((f) => ({ ...f, markup: e.target.value }))} /></Field>
+            : <div className="text-[11px] text-amber-600">Pick the project above, so it shows on that project's invoice.</div>)}
         </div>
 
         <Field label="Note (optional)">
