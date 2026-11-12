@@ -19,6 +19,13 @@ const RADII = [100, 200, 300, 500, 1000, 2000];
 const ACT_ROLES = ["director", "admin", "supervisor", "site_user"];
 const APPROVE_ROLES = ["director", "admin", "supervisor"];
 const PAY_ROLES = ["director", "supervisor", "site_user"];        // who may open Field Payments (App.tsx)
+// Quick reasons instead of typing (the last choice, "Other", lets you type one)
+const REASONS_TIME = ["Forgot to clock out", "Forgot to clock in", "Phone dead / no battery", "No phone or no data", "The app would not work",
+  "Clocked at the wrong time", "Was working on another site", "Came late (allowed)", "Left early (allowed)", "Overtime (allowed)"];
+const REASONS_DELETE = ["Entered twice", "Wrong worker", "Wrong day", "Did not work that day", "Test entry"];
+const REASONS_REJECT = ["Did not work", "Not on the site", "Left early without leave", "Came too late", "Time is not right"];
+const REASONS_HOURS = ["Forgot to clock out", "Forgot to clock in", "Lunch not taken off", "Left early", "Came late", "Half day", "Overtime (allowed)"];
+const OTHER = "Other (type it)";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -39,7 +46,8 @@ export default function AttendancePage() {
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, Check[]>>({});
   const [modal, setModal] = useState<"crew" | "site" | "manual" | "out" | null>(null);
-  const [editing, setEditing] = useState<StaffShift | null>(null);      // a supervisor changing a finished shift's times
+  const [editing, setEditing] = useState<StaffShift | null>(null);
+  const [deleting, setDeleting] = useState<StaffShift | null>(null);   // asking why before deleting a day      // a supervisor changing a finished shift's times
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [view, setView] = useState<"day" | "diary" | "approve">("day");
@@ -111,9 +119,8 @@ export default function AttendancePage() {
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save the picture." }); }
   }
 
-  async function deleteRow(s: StaffShift) {
-    const reason = window.prompt(`Delete ${wname(s.workers)}'s time on ${s.work_date} (${timeWords(s.clock_in_at)} – ${timeWords(s.clock_out_at)})?\n\nWhy? (for example: entered twice, wrong worker)`, "");
-    if (!reason?.trim()) return;
+  async function deleteRow(s: StaffShift, reason: string) {
+    setDeleting(null);
     try { await deleteShift(s.id, reason.trim()); setMsg({ ok: true, text: "Deleted. A copy is kept with the reason." }); reload(); }
     catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not delete." }); }
   }
@@ -235,7 +242,7 @@ export default function AttendancePage() {
                       {canAct && s.status === "open" && <button onClick={() => void clockOutRow(s)} className="text-xs font-semibold text-red-600 underline">Clock out now</button>}
                       {APPROVE_ROLES.includes(role) && s.status === "closed" && !s.field_payment_id && (<>
                         <button onClick={() => setEditing(s)} className="text-xs font-semibold text-slate-700 dark:text-slate-300 underline">✏️ Change times</button>
-                        <button onClick={() => void deleteRow(s)} className="text-xs font-semibold text-red-600 underline">🗑 Delete</button>
+                        <button onClick={() => setDeleting(s)} className="text-xs font-semibold text-red-600 underline">🗑 Delete</button>
                       </>)}
                     </div>
                     {openRow === s.id && (
@@ -261,6 +268,9 @@ export default function AttendancePage() {
         onSaved={(t) => { setModal(null); setEditing(null); setMsg({ ok: true, text: t }); reload(); }} />}
       {modal === "crew" && companyId && <CrewModal companyId={companyId} projects={projects} workers={workers} busyIds={shifts.filter((s) => s.status === "open").map((s) => s.worker_id)}
         onClose={() => { setModal(null); reload(); }} />}
+      {deleting && <ReasonModal title={`Delete ${wname(deleting.workers)}'s time`}
+        text={`${deleting.work_date} · ${timeWords(deleting.clock_in_at)} – ${timeWords(deleting.clock_out_at)}. A copy is kept with the reason.`}
+        reasons={REASONS_DELETE} okText="🗑 Delete" danger onCancel={() => setDeleting(null)} onOk={(r) => void deleteRow(deleting, r)} />}
       {modal === "out" && <OutModal shifts={shifts.filter((s) => s.status === "open")}
         onClose={(t) => { setModal(null); if (t) setMsg({ ok: true, text: t }); reload(); }} />}
       {modal === "site" && <SiteModal projects={projects} onClose={() => { setModal(null); reload(); }} />}
@@ -645,19 +655,16 @@ function ApproveView({ companyId }: { companyId: string }) {
     catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "That did not work." }); }
     setBusy(false);
   }
-  function changeTime(s: PayShift) {
-    const cur = ((s.approved_minutes ?? s.minutes_worked ?? 0) / 60).toFixed(2);
-    const v = window.prompt(`Hours to pay for ${wname(s.workers)} on ${s.work_date} (for example 7.5):`, cur);
-    if (v == null) return;
-    const h = Number(v);
+  const [ask, setAsk] = useState<{ kind: "hours" | "reject"; s: PayShift } | null>(null);   // the reason box
+  function changeTime(s: PayShift, hours: string, note: string) {
+    setAsk(null);
+    const h = Number(hours);
     if (!isFinite(h) || h < 0 || h > 24) { setMsg({ ok: false, text: "Type hours between 0 and 24." }); return; }
-    const note = window.prompt("Why was the time changed? (optional)", "") || null;
-    void act(() => approveShifts([s.id], Math.round(h * 60), note), "Time changed and approved.");
+    void act(() => approveShifts([s.id], Math.round(h * 60), note || null), "Time changed and approved.");
   }
-  function reject(s: PayShift) {
-    const note = window.prompt(`Why is ${wname(s.workers)}'s time on ${s.work_date} not paid?`, "");
-    if (!note?.trim()) return;
-    void act(() => rejectShifts([s.id], note.trim()), "Marked as not paid.");
+  function reject(s: PayShift, note: string) {
+    setAsk(null);
+    void act(() => rejectShifts([s.id], note), "Marked as not paid.");
   }
   function pay(g: PayShift[]) {
     const ok = g.filter((s) => s.approval === "approved");
@@ -715,8 +722,8 @@ function ApproveView({ companyId }: { companyId: string }) {
                   <div className="flex gap-2 text-xs font-semibold">
                     {s.approval === "pending" ? (<>
                       <button disabled={busy} onClick={() => void act(() => approveShifts([s.id]), "Approved.")} className="text-green-700 underline">Approve</button>
-                      <button disabled={busy} onClick={() => changeTime(s)} className="text-blue-700 underline">Change time</button>
-                      <button disabled={busy} onClick={() => reject(s)} className="text-red-700 underline">Don't pay</button>
+                      <button disabled={busy} onClick={() => setAsk({ kind: "hours", s })} className="text-blue-700 underline">Change time</button>
+                      <button disabled={busy} onClick={() => setAsk({ kind: "reject", s })} className="text-red-700 underline">Don't pay</button>
                     </>) : <button disabled={busy} onClick={() => void act(() => unapproveShifts([s.id]), "Back to waiting.")} className="text-slate-600 underline">Undo</button>}
                   </div>
                 </div>
@@ -725,7 +732,54 @@ function ApproveView({ companyId }: { companyId: string }) {
           </div>
         );
       })}
+      {ask?.kind === "hours" && <ReasonModal title={`Change time: ${wname(ask.s.workers)}`} text={`${ask.s.work_date} · ${timeWords(ask.s.clock_in_at)}–${timeWords(ask.s.clock_out_at)} · counted ${hoursWords(ask.s.minutes_worked)}`}
+        hours={((ask.s.approved_minutes ?? ask.s.minutes_worked ?? 0) / 60).toFixed(2)} reasons={REASONS_HOURS} optional
+        start={ask.s.flags.includes("forgot_clock_out") ? "Forgot to clock out" : ""}
+        okText="Save and approve" onCancel={() => setAsk(null)} onOk={(r, h) => changeTime(ask.s, h || "", r)} />}
+      {ask?.kind === "reject" && <ReasonModal title={`Don't pay: ${wname(ask.s.workers)}`} text={`${ask.s.work_date} · ${timeWords(ask.s.clock_in_at)}–${timeWords(ask.s.clock_out_at)}`}
+        reasons={REASONS_REJECT} okText="Don't pay this day" danger onCancel={() => setAsk(null)} onOk={(r) => reject(ask.s, r)} />}
     </div>
+  );
+}
+
+// Pick a reason from the list (or "Other" and type it). onChange gets the final words ("" when nothing picked yet).
+function ReasonPick({ reasons, start = "", onChange }: { reasons: string[]; start?: string; onChange: (r: string) => void }) {
+  const [pick, setPick] = useState(start);
+  const [other, setOther] = useState("");
+  return (
+    <div className="space-y-2">
+      <select value={pick} onChange={(e) => { setPick(e.target.value); onChange(e.target.value === OTHER ? other.trim() : e.target.value); }} className={`${input} w-full`}>
+        <option value="">Why? Pick a reason…</option>
+        {reasons.map((r) => <option key={r} value={r}>{r}</option>)}
+        <option value={OTHER}>{OTHER}</option>
+      </select>
+      {pick === OTHER && <input autoFocus value={other} onChange={(e) => { setOther(e.target.value); onChange(e.target.value.trim()); }} placeholder="Type the reason" className={`${input} w-full`} />}
+    </div>
+  );
+}
+
+// A small box asking why (and, for "Change time", how many hours)
+function ReasonModal({ title, text, reasons, hours, start, optional, okText, danger, onCancel, onOk }: {
+  title: string; text?: string; reasons: string[]; hours?: string; start?: string; optional?: boolean; okText: string; danger?: boolean;
+  onCancel: () => void; onOk: (reason: string, hours?: string) => void;
+}) {
+  const [reason, setReason] = useState(start || "");
+  const [h, setH] = useState(hours ?? "");
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Shell title={title} onClose={onCancel}>
+      {text && <p className="text-sm text-slate-600 dark:text-slate-400">{text}</p>}
+      {hours !== undefined && (
+        <label className="block text-xs text-slate-500">Hours to pay (for example 7.5)
+          <input type="number" inputMode="decimal" step="0.25" min="0" max="24" value={h} onChange={(e) => setH(e.target.value)} className={`${input} mt-1 w-full`} />
+        </label>
+      )}
+      <ReasonPick reasons={reasons} start={start} onChange={setReason} />
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      <button onClick={() => { if (!optional && !reason) { setErr("Pick a reason (or Other and type it)."); return; } onOk(reason, h); }}
+        className={`${btn} w-full min-h-[48px] text-white ${danger ? "bg-red-600 hover:bg-red-500" : "bg-green-600 hover:bg-green-500"}`}>{okText}</button>
+      <button onClick={onCancel} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
+    </Shell>
   );
 }
 
@@ -738,7 +792,7 @@ function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
   const [date, setDate] = useState(shift?.work_date || day);
   const [tin, setTin] = useState(shift ? jaHM(shift.clock_in_at) : "07:00");
   const [tout, setTout] = useState(shift ? jaHM(shift.clock_out_at) : "16:00");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(shift?.flags.includes("forgot_clock_out") ? "Forgot to clock out" : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [many, setMany] = useState(false);             // add the same day and times for several workers
@@ -748,7 +802,7 @@ function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
     setErr(null);
     if ((many && !shift ? picked.length === 0 : !workerId) || !projectId || !date || !tin || !tout) { setErr("Pick the worker, the project, the day and both times."); return; }
     if (mins <= 0) { setErr("The time out must be after the time in (same day)."); return; }
-    if (!note.trim()) { setErr(shift ? "Say why the time is changed." : "Say why the time is entered by hand (for example: forgot to clock in)."); return; }
+    if (!note.trim()) { setErr("Pick a reason (or Other and type it)."); return; }
     setBusy(true);
     if (many && !shift) {
       const ok: string[] = [], bad: string[] = [];
@@ -787,7 +841,7 @@ function TimeModal({ projects, workers, shift, day, onClose, onSaved }: {
         <label className="text-xs text-slate-500">Time out<input type="time" value={tout} onChange={(e) => setTout(e.target.value)} className={`${input} mt-1 w-full`} /></label>
       </div>
       {mins > 0 && <div className="text-sm text-slate-700 dark:text-slate-300">= <b>{hoursWords(mins)}</b></div>}
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={shift ? "Why? e.g. clocked out late by mistake" : "Why? e.g. forgot to clock in, no phone"} className={`${input} w-full`} />
+      <ReasonPick reasons={REASONS_TIME} start={note} onChange={setNote} />
       {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
       <button onClick={() => void save()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Saving…" : shift ? "Save the change" : many ? `Add the time for ${picked.length} ${picked.length === 1 ? "worker" : "workers"}` : "Add the time"}</button>
       <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
