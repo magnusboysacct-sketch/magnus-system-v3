@@ -280,8 +280,8 @@ export default function AttendancePage() {
 
 function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#0f151c] p-4 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 pb-16 sm:pb-16" onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#0f151c] p-4 space-y-3 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between"><h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h2><button onClick={onClose} className="text-2xl text-slate-500" aria-label="Close">×</button></div>
         {children}
       </div>
@@ -311,8 +311,8 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
     const good: string[] = [], bad: string[] = [];
     let far: number | null | undefined = null, noLoc = false;
     try {
-      setBusy("Finding where you are… (up to 15 seconds)");
-      const fix = await getFix(12000);
+      setBusy("Finding where you are… (up to 10 seconds)");
+      const fix = await getFix(7000);
       noLoc = !fix;
       for (const [i, id] of ids.entries()) {
         setBusy(`Clocking in ${i + 1} of ${ids.length}…`);
@@ -338,8 +338,8 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
         photo = await uploadStaffClockPhoto(companyId, workerId, await shrinkPhoto(file));
         photoLost = !photo;
       }
-      setBusy("Finding where you are… (up to 15 seconds)");
-      const fix = await getFix(12000);
+      setBusy("Finding where you are… (up to 10 seconds)");
+      const fix = await getFix(7000);
       setBusy("Clocking in…");
       const r = await staffClockIn(workerId, projectId, fix, photo);
       setDone((d) => [...d, workerId]);
@@ -369,7 +369,7 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
       </select>)}
       {ok && <div className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-semibold text-green-800">{ok}</div>}
       {err && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</div>}
-      {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : many ? (
+      {busy ? <Working text={busy} /> : many ? (
         <button onClick={() => void goMany()} disabled={picked.length === 0}
           className={`${btn} w-full min-h-[56px] bg-green-600 hover:bg-green-500 text-white text-base`}>▶ Clock in {picked.length || ""} {picked.length === 1 ? "worker" : "workers"} now</button>
       ) : (<>
@@ -383,13 +383,23 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
   );
 }
 
+// The "working…" box: big and readable in light AND dark mode (it used to be invisible in dark mode).
+function Working({ text }: { text: string }) {
+  return (
+    <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-blue-400 bg-blue-50 px-3 py-4 text-base font-bold text-blue-900">
+      <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-blue-300 border-t-blue-700" />
+      {text}
+    </div>
+  );
+}
+
 // "One worker" / "Several at once" switch used by Clock in crew and Add time by hand
 function OneOrMany({ many, setMany }: { many: boolean; setMany: (m: boolean) => void }) {
   return (
     <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 dark:bg-white/[0.05] p-1">
       {([[false, "One worker"], [true, "Several at once"]] as const).map(([v, l]) => (
         <button key={l} type="button" onClick={() => setMany(v)}
-          className={`rounded-md py-2 text-sm font-semibold ${many === v ? "bg-white dark:bg-[#111820] text-slate-900 dark:text-slate-100 shadow" : "text-slate-500"}`}>{l}</button>
+          className={`rounded-md py-2 text-sm font-semibold ${many === v ? "bg-blue-600 text-white shadow" : "text-slate-600 dark:text-slate-300"}`}>{l}</button>
       ))}
     </div>
   );
@@ -448,7 +458,7 @@ function OutModal({ shifts, onClose }: { shifts: StaffShift[]; onClose: (done?: 
       <p className="text-sm text-slate-600 dark:text-slate-400">Tick who is going home, then tap the red button. Everyone ticked is clocked out now, with your phone's location.</p>
       <PickMany list={people} picked={picked} setPicked={setPicked} />
       {err && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</div>}
-      {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : (
+      {busy ? <Working text={busy} /> : (
         <button onClick={() => void go()} disabled={picked.length === 0}
           className={`${btn} w-full min-h-[56px] bg-red-600 hover:bg-red-500 text-white text-base`}>⏹ Clock out {picked.length || ""} {picked.length === 1 ? "worker" : "workers"} now</button>
       )}
