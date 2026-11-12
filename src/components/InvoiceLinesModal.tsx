@@ -27,6 +27,7 @@ export default function InvoiceLinesModal({ invoice, onClose, onSaved }: { invoi
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [boqOpen, setBoqOpen] = useState(false);
+  const [ratesOpen, setRatesOpen] = useState(false);   // "Update rates from BOQ"
 
   useEffect(() => {
     let alive = true;
@@ -99,8 +100,16 @@ export default function InvoiceLinesModal({ invoice, onClose, onSaved }: { invoi
               ))}
               <div className="flex flex-wrap gap-2">
                 <button onClick={addBlank} className={`${btn} border border-slate-300 text-slate-700 dark:text-slate-300`}>+ Add a line</button>
-                {invoice.project_id && <button onClick={() => setBoqOpen((o) => !o)} className={`${btn} bg-cyan-600 hover:bg-cyan-500 text-white`}>+ Add from BOQ</button>}
+                {invoice.project_id && <button onClick={() => { setBoqOpen((o) => !o); setRatesOpen(false); }} className={`${btn} bg-cyan-600 hover:bg-cyan-500 text-white`}>+ Add from BOQ</button>}
+                {invoice.project_id && <button onClick={() => { setRatesOpen((o) => !o); setBoqOpen(false); }} className={`${btn} border border-cyan-500 text-cyan-700 dark:text-cyan-400`}>↻ Update rates from BOQ</button>}
               </div>
+              {ratesOpen && invoice.project_id && (
+                <RatesFromBoq projectId={invoice.project_id} current={lines}
+                  onApply={(changes) => {
+                    setLines((ls) => ls.map((l) => (changes[l.key] ? { ...l, rate: changes[l.key].rate, source_boq_section_item_id: l.source_boq_section_item_id || changes[l.key].itemId } : l)));
+                    setRatesOpen(false);
+                  }} />
+              )}
               {boqOpen && invoice.project_id && (
                 <BoqPicker projectId={invoice.project_id} current={lines}
                   onAdd={(add) => { setLines((ls) => [...ls, ...add]); setBoqOpen(false); }} />
@@ -128,6 +137,87 @@ export default function InvoiceLinesModal({ invoice, onClose, onSaved }: { invoi
         </>)}
         <button onClick={onClose} className={`${btn} w-full border border-slate-300 text-slate-700 dark:text-slate-300`}>Cancel</button>
       </div>
+    </div>
+  );
+}
+
+// "Update rates from BOQ": the BOQ rate (plus the markup typed here) for each invoice line that has a matching BOQ item
+// (the item it came from, or the same name for older invoices). Only lines whose rate differs are listed; tick which to change.
+function RatesFromBoq({ projectId, current, onApply }: {
+  projectId: string; current: EditLine[]; onApply: (changes: Record<string, { rate: string; itemId: string }>) => void;
+}) {
+  const [boqs, setBoqs] = useState<ProjectBoq[]>([]);
+  const [boqId, setBoqId] = useState("");
+  const [items, setItems] = useState<UnbilledItem[]>([]);
+  const [markup, setMarkup] = useState("0");
+  const [off, setOff] = useState<Record<string, boolean>>({});     // lines the user unticked
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProjectBoqs(projectId).then((b) => {
+      setBoqs(b);
+      const first = b.find((x) => x.status === "approved") || b[0];
+      if (first) setBoqId(first.id); else setLoading(false);
+    }).catch((e) => { setErr(e instanceof Error ? e.message : "Could not load the BOQ."); setLoading(false); });
+  }, [projectId]);
+  useEffect(() => {
+    if (!boqId) return;
+    fetchBoqUnbilled(boqId).then((r) => { setItems(r); setLoading(false); })
+      .catch((e) => { setErr(e instanceof Error ? e.message : "Could not load the BOQ."); setLoading(false); });
+  }, [boqId]);
+
+  const factor = 1 + (Number(markup) || 0) / 100;
+  const norm = (t: string | null | undefined) => (t || "").trim().toLowerCase();
+  const diffs = current.map((l) => {
+    const it = items.find((x) => x.item_id === l.source_boq_section_item_id)
+      || items.find((x) => norm(x.item_name) !== "" && norm(x.item_name) === norm(l.description));
+    if (!it) return null;
+    const newRate = r2(it.rate * factor);
+    return Math.abs(newRate - (Number(l.rate) || 0)) >= 0.005 ? { line: l, it, newRate } : null;
+  }).filter(Boolean) as { line: EditLine; it: UnbilledItem; newRate: number }[];
+
+  function apply() {
+    const changes: Record<string, { rate: string; itemId: string }> = {};
+    diffs.forEach((d) => { if (!off[d.line.key]) changes[d.line.key] = { rate: String(d.newRate), itemId: d.it.item_id }; });
+    if (Object.keys(changes).length === 0) { setErr("Nothing ticked."); return; }
+    onApply(changes);
+  }
+
+  return (
+    <div className="rounded-xl border border-cyan-300 dark:border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-500/5 p-3 space-y-2">
+      <div className="text-sm font-bold text-slate-800 dark:text-slate-100">Update rates from the BOQ</div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-[10px] text-slate-500">BOQ
+          <select value={boqId} onChange={(e) => { setLoading(true); setBoqId(e.target.value); }} className={inp}>
+            {boqs.map((b) => <option key={b.id} value={b.id}>Version {b.version ?? "?"}{b.status ? ` (${b.status})` : ""}</option>)}
+          </select>
+        </label>
+        <label className="text-[10px] text-slate-500">Markup on BOQ rates (%), same as when the invoice was made
+          <input type="number" inputMode="decimal" value={markup} onChange={(e) => setMarkup(e.target.value)} className={inp} />
+        </label>
+      </div>
+      {loading ? <div className="text-sm text-slate-500">Loading…</div>
+        : boqs.length === 0 ? <div className="text-sm text-slate-500">This project has no BOQ.</div>
+        : diffs.length === 0 ? <div className="text-sm text-slate-500">Every line that matches a BOQ item already has the BOQ rate{Number(markup) ? " (with this markup)" : ""}. Nothing to change.</div>
+        : (
+        <div className="divide-y divide-slate-200 dark:divide-white/[0.06] rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117]">
+          {diffs.map((d) => (
+            <label key={d.line.key} className="flex items-start gap-2 p-2 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" checked={!off[d.line.key]} onChange={(e) => setOff((m) => ({ ...m, [d.line.key]: !e.target.checked }))} />
+              <span className="flex-1">
+                <span className="font-semibold text-slate-800 dark:text-slate-200">{d.line.description}</span>
+                <span className="block text-xs text-slate-600 dark:text-slate-400">
+                  Invoice {money(Number(d.line.rate) || 0)} → BOQ <b className="text-cyan-700 dark:text-cyan-400">{money(d.newRate)}</b> · qty {d.line.quantity} · line becomes {money(r2((Number(d.line.quantity) || 0) * d.newRate))}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-500">Only lines that match a BOQ item are checked. A line made "one line per section", or typed by hand, is not changed here: fix it on the line.</div>
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {diffs.length > 0 && <button onClick={apply} className={`${btn} w-full bg-cyan-600 hover:bg-cyan-500 text-white`}>Use the ticked BOQ rates</button>}
     </div>
   );
 }
