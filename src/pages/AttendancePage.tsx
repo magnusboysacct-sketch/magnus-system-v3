@@ -298,6 +298,7 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
   const [done, setDone] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [ok, setOk] = useState<string | null>(null);   // a clear green "clocked in" message (it used to look like nothing happened)
   const [many, setMany] = useState(false);             // "Several at once": tick the crew, one tap clocks them all in
   const [picked, setPicked] = useState<string[]>([]);
   const taken = new Set([...busyIds, ...done]);
@@ -306,33 +307,47 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
   async function goMany() {
     const ids = picked.filter((id) => !taken.has(id));
     if (!projectId || ids.length === 0) { setErr("Pick the project and tick the workers."); return; }
-    setErr(null);
-    setBusy("Finding where you are…");
-    const fix = await getFix();
-    const ok: string[] = [], bad: string[] = [];
-    let far: number | null | undefined = null;
-    for (const [i, id] of ids.entries()) {
-      setBusy(`Clocking in ${i + 1} of ${ids.length}…`);
-      try { const r = await staffClockIn(id, projectId, fix, null); ok.push(id); if (r.status === "off_site") far = r.distance_m; }
-      catch (e) { bad.push(`${wname(workers.find((w) => w.id === id) || null)}: ${e instanceof Error ? e.message : "could not clock in"}`); }
+    setErr(null); setOk(null);
+    const good: string[] = [], bad: string[] = [];
+    let far: number | null | undefined = null, noLoc = false;
+    try {
+      setBusy("Finding where you are… (up to 15 seconds)");
+      const fix = await getFix(12000);
+      noLoc = !fix;
+      for (const [i, id] of ids.entries()) {
+        setBusy(`Clocking in ${i + 1} of ${ids.length}…`);
+        try { const r = await staffClockIn(id, projectId, fix, null); good.push(id); if (r.status === "off_site") far = r.distance_m; }
+        catch (e) { bad.push(`${wname(workers.find((w) => w.id === id) || null)}: ${e instanceof Error ? e.message : "could not clock in"}`); }
+      }
+    } finally {
+      setDone((d) => [...d, ...good]); setPicked((p) => p.filter((id) => !good.includes(id))); setBusy(null);
     }
-    setDone((d) => [...d, ...ok]); setPicked([]); setBusy(null);
-    setErr([bad.length ? `Not clocked in: ${bad.join("; ")}` : "", far != null ? `Your phone is ${distanceWords(far)} from the site, so they are marked "away from site".` : ""].filter(Boolean).join(" ") || null);
+    if (good.length) setOk(`✅ ${good.length} clocked in: ${good.map((id) => wname(workers.find((w) => w.id === id) || null)).join(", ")}.`);
+    setErr([bad.length ? `NOT clocked in: ${bad.join("; ")}` : "",
+      noLoc && good.length ? "The phone did not give its location, so they are marked \"no location\". Allow Location for this site to fix that next time." : "",
+      far != null ? `Your phone is ${distanceWords(far)} from the site, so they are marked "away from site".` : ""].filter(Boolean).join(" ") || null);
   }
 
   async function go(file: File | null) {
     if (!projectId || !workerId) { setErr("Pick the project and the worker."); return; }
-    setErr(null);
+    setErr(null); setOk(null);
     try {
-      let photo: string | null = null;
-      if (file) { setBusy("Saving the photo…"); photo = await uploadStaffClockPhoto(companyId, workerId, await shrinkPhoto(file)); }
-      setBusy("Finding where you are…");
-      const fix = await getFix();
+      let photo: string | null = null, photoLost = false;
+      if (file) {
+        setBusy("Saving the photo…");
+        photo = await uploadStaffClockPhoto(companyId, workerId, await shrinkPhoto(file));
+        photoLost = !photo;
+      }
+      setBusy("Finding where you are… (up to 15 seconds)");
+      const fix = await getFix(12000);
       setBusy("Clocking in…");
       const r = await staffClockIn(workerId, projectId, fix, photo);
       setDone((d) => [...d, workerId]);
       const w = workers.find((x) => x.id === workerId);
-      setErr(r.status === "off_site" ? `${wname(w || null)} is clocked in, but your phone is ${distanceWords(r.distance_m)} from the site.` : null);
+      setOk(`✅ ${wname(w || null)} is clocked in.`);
+      setErr([r.status === "off_site" ? `Your phone is ${distanceWords(r.distance_m)} from the site, so it is marked "away from site".` : "",
+        !fix ? "The phone did not give its location (marked \"no location\"). Allow Location for this site to fix that next time." : "",
+        photoLost ? "The photo did not save (weak signal?), but the clock in did." : ""].filter(Boolean).join(" ") || null);
       setWorkerId("");
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not clock in."); }
     finally { setBusy(null); }
@@ -352,6 +367,7 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
         <option value="">Pick the worker…</option>
         {left.map((w) => <option key={w.id} value={w.id}>{wname(w)}{w.employee_id ? ` · ${w.employee_id}` : ""}</option>)}
       </select>)}
+      {ok && <div className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-semibold text-green-800">{ok}</div>}
       {err && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</div>}
       {busy ? <div className="rounded-lg bg-slate-100 px-3 py-3 text-center text-sm font-semibold">⏳ {busy}</div> : many ? (
         <button onClick={() => void goMany()} disabled={picked.length === 0}

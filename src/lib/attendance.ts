@@ -17,26 +17,39 @@ export interface ClockResult { status: "on_site" | "off_site" | "unsure" | "no_l
 
 // ── the phone ──────────────────────────────────────────────────────────────────────────────────────────────
 // Where the phone is now, or null (location off, refused, or no answer in 20 seconds).
+// The phone's own timeout does NOT count the time the "Allow location?" question is waiting (or hidden, or never shown in some
+// in-app browsers), so it could wait forever and the screen did nothing. A hard stop makes sure it always answers.
 export function getFix(timeoutMs = 20000): Promise<Fix | null> {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) { resolve(null); return; }
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy || 0) }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 },
-    );
+    let done = false;
+    const finish = (v: Fix | null) => { if (!done) { done = true; clearTimeout(stop); resolve(v); } };
+    const stop = setTimeout(() => finish(null), timeoutMs + 3000);
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (p) => finish({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy || 0) }),
+        () => finish(null),
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 },
+      );
+    } catch { finish(null); }
   });
 }
 
 // Like getFix, but says WHY there is no location (so the page can tell the person what to do).
 export function getFixWhy(timeoutMs = 30000): Promise<{ fix: Fix | null; why: "denied" | "unavailable" | "timeout" | "unsupported" | null }> {
+  type R = { fix: Fix | null; why: "denied" | "unavailable" | "timeout" | "unsupported" | null };
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) { resolve({ fix: null, why: "unsupported" }); return; }
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ fix: { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy || 0) }, why: null }),
-      (e) => resolve({ fix: null, why: e.code === 1 ? "denied" : e.code === 3 ? "timeout" : "unavailable" }),
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
-    );
+    let done = false;
+    const finish = (v: R) => { if (!done) { done = true; clearTimeout(stop); resolve(v); } };
+    const stop = setTimeout(() => finish({ fix: null, why: "timeout" }), timeoutMs + 3000);   // see getFix
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (p) => finish({ fix: { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy || 0) }, why: null }),
+        (e) => finish({ fix: null, why: e.code === 1 ? "denied" : e.code === 3 ? "timeout" : "unavailable" }),
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
+      );
+    } catch { finish({ fix: null, why: "unavailable" }); }
   });
 }
 // A point typed or pasted: "18.1234, -77.5678", or a Google Maps link (…@18.12,-77.56,… or …?q=18.12,-77.56…).
