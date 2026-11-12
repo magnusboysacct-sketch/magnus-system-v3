@@ -56,7 +56,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
   const [error, setError]       = useState<string|null>(null);
   const [progress, setProgress] = useState("");
   const [aiPowered, setAiPowered] = useState(true);
-  const [box, setBox]           = useState({ x:3, y:3, w:94, h:94 });
+  const [box, setBox]           = useState({ x:8, y:8, w:84, h:84 });
 
   const [fields, setFields] = useState<ReceiptScanResult>({
     vendor:"", amount:0, date:"", receiptNumber:"", tax:0,
@@ -97,8 +97,9 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
   // Drag
   function getPos(e: React.MouseEvent|React.TouchEvent) {
     const rect = containerRef.current!.getBoundingClientRect();
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const t = "touches" in e ? e.touches[0] : null;
+    const cx = t ? t.clientX : (e as React.MouseEvent).clientX;
+    const cy = t ? t.clientY : (e as React.MouseEvent).clientY;
     return { x:((cx-rect.left)/rect.width)*100, y:((cy-rect.top)/rect.height)*100 };
   }
   function onPD(e: React.MouseEvent|React.TouchEvent, type: string) {
@@ -106,17 +107,25 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
     const p = getPos(e);
     dragging.current = { type, startX:p.x, startY:p.y, startBox:{...box} };
   }
+  // Fixed: the box update used to read dragging.current AFTER the finger was lifted (it is null by then), which crashed the
+  // page ("it shuts down, reload"). Everything is read here, once, before the update. A second finger is ignored.
   const onPM = useCallback((e: MouseEvent|TouchEvent) => {
-    if (!dragging.current || !containerRef.current) return;
+    const d = dragging.current;
+    if (!d || !containerRef.current) return;
+    let cx: number, cy: number;
+    if ("touches" in e) {
+      const t = (e as TouchEvent).touches[0];
+      if (!t || (e as TouchEvent).touches.length > 1) return;
+      if (e.cancelable) e.preventDefault();          // no page scroll / zoom while dragging the box
+      cx = t.clientX; cy = t.clientY;
+    } else { cx = (e as MouseEvent).clientX; cy = (e as MouseEvent).clientY; }
     const rect = containerRef.current.getBoundingClientRect();
-    const cx = "touches" in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
-    const cy = "touches" in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
-    const dx = ((cx-rect.left)/rect.width)*100  - dragging.current.startX;
-    const dy = ((cy-rect.top) /rect.height)*100 - dragging.current.startY;
-    const sb = dragging.current.startBox; const MIN = 15;
+    const dx = ((cx-rect.left)/rect.width)*100  - d.startX;
+    const dy = ((cy-rect.top) /rect.height)*100 - d.startY;
+    const sb = d.startBox; const MIN = 15; const type = d.type;
     setBox(() => {
       let {x,y,w,h} = sb;
-      switch(dragging.current!.type) {
+      switch(type) {
         case"move": x=Math.max(0,Math.min(100-w,x+dx)); y=Math.max(0,Math.min(100-h,y+dy)); break;
         case"se":   w=Math.max(MIN,Math.min(100-x,w+dx)); h=Math.max(MIN,Math.min(100-y,h+dy)); break;
         case"sw":   x=Math.min(sb.x+sb.w-MIN,x+dx); w=Math.max(MIN,w-dx); h=Math.max(MIN,Math.min(100-y,h+dy)); break;
@@ -130,13 +139,23 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
       return {x,y,w,h};
     });
   }, []);
-  const onPU = useCallback(() => { dragging.current = null; }, []);
+  // When the finger is lifted after a drag, the phone also sends a "tap" to whatever is under the finger - often the dark
+  // area around the window, which CLOSED the window. That one tap is swallowed now.
+  const dragEndedAt = useRef(0);
+  const onPU = useCallback(() => { if (dragging.current) dragEndedAt.current = Date.now(); dragging.current = null; }, []);
+  useEffect(() => {
+    const eat = (e: MouseEvent) => { if (Date.now() - dragEndedAt.current < 600) { e.stopPropagation(); e.preventDefault(); } };
+    window.addEventListener("click", eat, true);
+    return () => window.removeEventListener("click", eat, true);
+  }, []);
   useEffect(() => {
     window.addEventListener("mousemove", onPM);
     window.addEventListener("mouseup",   onPU);
     window.addEventListener("touchmove", onPM, { passive:false });
     window.addEventListener("touchend",  onPU);
+    window.addEventListener("touchcancel", onPU);
     return () => {
+      window.removeEventListener("touchcancel", onPU);
       window.removeEventListener("mousemove", onPM);
       window.removeEventListener("mouseup",   onPU);
       window.removeEventListener("touchmove", onPM);
@@ -199,7 +218,8 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
   }
 
   const inputCls = "w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50 transition-colors";
-  const H = "absolute w-5 h-5 bg-emerald-400 border-2 border-white rounded z-20 touch-none cursor-pointer";
+  // a 44px touch area (invisible) with the small square in the middle, so a finger hits the corner and not the window
+  const H = "absolute w-11 h-11 z-20 touch-none cursor-pointer flex items-center justify-center after:content-[''] after:w-5 after:h-5 after:rounded after:border-2 after:border-white after:bg-emerald-400";
 
   return (
     <div className="space-y-3">
@@ -275,10 +295,10 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
                     <div className="absolute border-l border-emerald-400" style={{left:"33%",top:0,bottom:0}}/>
                     <div className="absolute border-l border-emerald-400" style={{left:"66%",top:0,bottom:0}}/>
                   </div>
-                  {[["nw","-top-2.5 -left-2.5"],["ne","-top-2.5 -right-2.5"],
-                    ["sw","-bottom-2.5 -left-2.5"],["se","-bottom-2.5 -right-2.5"],
-                    ["n","-top-2.5 left-1/2 -translate-x-1/2"],["s","-bottom-2.5 left-1/2 -translate-x-1/2"],
-                    ["w","top-1/2 -translate-y-1/2 -left-2.5"],["e","top-1/2 -translate-y-1/2 -right-2.5"],
+                  {[["nw","-top-[22px] -left-[22px]"],["ne","-top-[22px] -right-[22px]"],
+                    ["sw","-bottom-[22px] -left-[22px]"],["se","-bottom-[22px] -right-[22px]"],
+                    ["n","-top-[22px] left-1/2 -translate-x-1/2"],["s","-bottom-[22px] left-1/2 -translate-x-1/2"],
+                    ["w","top-1/2 -translate-y-1/2 -left-[22px]"],["e","top-1/2 -translate-y-1/2 -right-[22px]"],
                   ].map(([d,c])=>(
                     <div key={d} className={cn(H,c)}
                       onMouseDown={e=>{e.stopPropagation();onPD(e,d)}}
