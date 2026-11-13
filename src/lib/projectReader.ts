@@ -180,3 +180,48 @@ export async function askProject(readId: string, question: string, history: { q:
   const r = await callAI<{ answer: string }>({ action: "ask_project", readId, question, history });
   return r.answer;
 }
+
+// ── 📜 Contract terms → a draft contract with its payment schedule (Contracts page) ────────────────────────────────────
+export interface ContractTerms {
+  kind: "contract_terms"; from_read: string;
+  contract_name?: string; client?: string; reference?: string; contract_date?: string | null; start_date?: string | null; completion_date?: string | null;
+  duration_weeks?: number | null; contract_amount?: number | null; currency?: string; amount_source?: string;
+  retention_percent?: number | null; retention_release?: string | null; advance_percent?: number | null; advance_amount?: number | null;
+  payment_terms?: string | null; billing_schedule?: string | null; penalty_clause?: string | null; warranty_period_months?: number | null;
+  governing_law?: string | null; scope_of_work?: string | null;
+  payment_schedule?: { name: string; description?: string; percent?: number | null; amount?: number | null; due_date?: string | null }[];
+  missing?: string[]; found_in?: string;
+}
+export const isContractTerms = (r: SavedRead) => (r.result as unknown as { kind?: string })?.kind === "contract_terms";
+export async function readContractTerms(readId: string): Promise<{ id: string | null; created_at: string | null; terms: ContractTerms }> {
+  return callAI({ action: "contract_terms", readId });
+}
+
+export interface NewContract {
+  name: string; number: string; contractDate: string | null; start: string | null; end: string | null; amount: number; retention: number;
+  paymentTerms: string; billing: string; penalty: string; warrantyMonths: number; scope: string; notes: string;
+  schedule: { name: string; description: string; amount: number; percent: number; due: string | null }[];
+}
+const BILLING = ["milestone", "monthly", "completion", "time_materials"];
+export async function createContractFromTerms(projectId: string, companyId: string, c: NewContract): Promise<string> {
+  const { data: p } = await supabase.from("projects").select("client_id").eq("id", projectId).maybeSingle();
+  const { data, error } = await supabase.from("client_contracts").insert({
+    company_id: companyId, project_id: projectId, client_id: (p as { client_id: string | null } | null)?.client_id || null,
+    contract_number: c.number, contract_name: c.name.trim().slice(0, 200), contract_date: c.contractDate || new Date().toISOString().slice(0, 10),
+    start_date: c.start, completion_date: c.end, contract_amount: Math.round(c.amount * 100) / 100, retention_percent: c.retention,
+    payment_terms: c.paymentTerms || null, billing_schedule: BILLING.includes(c.billing) ? c.billing : "milestone",
+    scope_of_work: c.scope || null, penalty_clause: c.penalty || null, warranty_period_months: c.warrantyMonths || 12,
+    governing_law: "Jamaica", notes: c.notes || null, status: "draft",
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  const id = (data as { id: string }).id;
+  const rows = c.schedule.filter((s) => s.name.trim()).map((s, i) => ({
+    contract_id: id, company_id: companyId, milestone_name: s.name.trim().slice(0, 200), milestone_description: s.description || null,
+    due_date: s.due, amount: Math.round(s.amount * 100) / 100, percent_complete: s.percent || 0, status: "pending", sort_order: i,
+  }));
+  if (rows.length) {
+    const { error: e2 } = await supabase.from("contract_payment_schedules").insert(rows);
+    if (e2) throw new Error(`The contract was made, but not its payment schedule: ${e2.message}`);
+  }
+  return id;
+}

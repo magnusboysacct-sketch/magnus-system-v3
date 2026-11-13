@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { askProject, createBoqFromDraft, createMilestones, deleteRead, draftBoq, isBoqDraft, isPlan, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { askProject, createBoqFromDraft, createContractFromTerms, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -65,7 +65,7 @@ export default function ProjectReaderPage() {
         setFiles(usable);
         setChosen((c) => (c.size ? c : new Set(usable.filter(readable).map((f) => f.id))));
         setReads(rd);
-        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r)) ?? null);
+        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r)) ?? null);
       } catch (e) { if (alive) setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); }
     })();
     return () => { alive = false; };
@@ -253,14 +253,19 @@ export default function ProjectReaderPage() {
               draft={reads.find((r) => isBoqDraft(r) && (r.result as unknown as BoqDraft).from_read === shown.id)}
               onDraft={(d) => setReads((rs) => [d, ...rs.filter((x) => x.id !== d.id)])} />
           )}
+          {shown.id && !shown.id.startsWith("tmp") && (
+            <ContractPanel read={shown} projectId={projectId} companyId={project?.company_id || null}
+              terms={reads.find((r) => isContractTerms(r) && (r.result as unknown as ContractTerms).from_read === shown.id)}
+              onTerms={(t) => setReads((rs) => [t, ...rs])} />
+          )}
         </div>
       )}
 
       {/* earlier readings */}
-      {reads.some((r) => !isPlan(r) && !isBoqDraft(r)) && (
+      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r)) && (
         <div className={`${card} p-4 space-y-2`}>
           <div className="font-semibold text-slate-800 dark:text-slate-100">Earlier readings</div>
-          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r)).map((r) => (
+          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r)).map((r) => (
             <div key={r.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${shown?.id === r.id ? "bg-violet-50 dark:bg-violet-500/10" : "bg-slate-50 dark:bg-white/[0.03]"}`}>
               <button onClick={() => { stop(); setShown(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-w-0 flex-1 text-left">
                 <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{r.result?.title || "Reading"}{r.question ? ` · "${r.question}"` : ""}</div>
@@ -594,3 +599,119 @@ function AskBox({ read }: { read: SavedRead }) {
     </div>
   );
 }
+
+// ── 📜 Contract terms → draft contract ────────────────────────────────────────────────────────────────────────────────
+function ContractPanel({ read, terms, projectId, companyId, onTerms }: {
+  read: SavedRead; terms: SavedRead | undefined; projectId: string; companyId: string | null; onTerms: (t: SavedRead) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function readTerms() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await readContractTerms(read.id);
+      onTerms({ id: r.id || `tmp${Date.now()}`, created_at: r.created_at || new Date().toISOString(), file_names: [], question: "Contract terms", result: r.terms as unknown as ReadResult });
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not read the terms."); }
+    setBusy(false);
+  }
+  return (
+    <div className="rounded-xl border-2 border-amber-200 dark:border-amber-500/30 p-3 space-y-3">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">📜 Contract terms → payment schedule</div>
+      {!terms && <p className="text-sm text-slate-600 dark:text-slate-400">Claude reads the contract (or the BOQ / budget when there is no contract) for the price, retention, advance, payment stages, dates, penalties and warranty, and fills a draft contract with its payment schedule for you to check.</p>}
+      {busy ? (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-amber-400 bg-amber-50 px-3 py-3 text-sm font-bold text-amber-900">
+          <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-amber-300 border-t-amber-700" />Reading the contract terms… (up to a minute)
+        </div>
+      ) : <button onClick={() => void readTerms()} className={`${btn} bg-amber-600 hover:bg-amber-500 text-white`}>{terms ? "↻ Read the terms again" : "📜 Read the contract terms"}</button>}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {terms && <TermsEditor key={terms.id} terms={terms.result as unknown as ContractTerms} projectId={projectId} companyId={companyId} />}
+    </div>
+  );
+}
+
+function TermsEditor({ terms, projectId, companyId }: { terms: ContractTerms; projectId: string; companyId: string | null }) {
+  const nav = useNavigate();
+  const cur = terms.currency || "JMD";
+  const amt0 = Number(terms.contract_amount) || 0;
+  const [f, setF] = useState(() => ({
+    name: terms.contract_name || "", number: terms.reference || `MBC-${new Date(terms.contract_date || Date.parse("2026-01-01")).getFullYear()}-${String(Math.abs(hash(terms.from_read)) % 9000 + 1000)}`,
+    contractDate: terms.contract_date || "", start: terms.start_date || "", end: terms.completion_date || "",
+    amount: String(amt0 || ""), retention: String(terms.retention_percent ?? ""), paymentTerms: [terms.payment_terms, terms.retention_release ? `Retention: ${terms.retention_release}` : "", terms.advance_percent || terms.advance_amount ? `Advance: ${terms.advance_percent ? `${terms.advance_percent}%` : ""}${terms.advance_amount ? ` ${cur} ${terms.advance_amount}` : ""}` : ""].filter(Boolean).join(" · "),
+    billing: terms.billing_schedule || "milestone", penalty: terms.penalty_clause || "", warranty: String(terms.warranty_period_months ?? 12), scope: terms.scope_of_work || "",
+  }));
+  const [rows, setRows] = useState(() => (terms.payment_schedule || []).map((s) => ({
+    name: s.name || "", description: s.description || "", percent: String(s.percent ?? ""),
+    amount: String(s.amount ?? (s.percent && amt0 ? Math.round(amt0 * Number(s.percent)) / 100 : "")), due: s.due_date || "",
+  })));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const setRow = (i: number, k: string, v: string) => setRows((rs) => rs.map((r, j) => {
+    if (j !== i) return r;
+    const n = { ...r, [k]: v };
+    if (k === "percent" && Number(f.amount) > 0 && v !== "") n.amount = String(Math.round(Number(f.amount) * Number(v)) / 100);
+    return n;
+  }));
+  const sumRows = rows.reduce((t, r) => t + (Number(r.amount) || 0), 0);
+  const amount = Number(f.amount) || 0;
+
+  async function create() {
+    if (!companyId) { setMsg({ ok: false, text: "The project is still loading. Try again." }); return; }
+    if (!f.name.trim()) { setMsg({ ok: false, text: "Give the contract a name." }); return; }
+    if (!(amount > 0)) { setMsg({ ok: false, text: "Type the contract amount." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      await createContractFromTerms(projectId, companyId, {
+        name: f.name, number: f.number, contractDate: f.contractDate || null, start: f.start || null, end: f.end || null, amount,
+        retention: Number(f.retention) || 0, paymentTerms: f.paymentTerms, billing: f.billing, penalty: f.penalty, warrantyMonths: Number(f.warranty) || 12,
+        scope: f.scope, notes: `Filled from the project documents by the Project Reader${terms.found_in ? ` (${terms.found_in})` : ""}. Check before you activate it.`,
+        schedule: rows.map((r) => ({ name: r.name, description: r.description, amount: Number(r.amount) || 0, percent: Number(r.percent) || 0, due: r.due || null })),
+      });
+      setMsg({ ok: true, text: "✅ Draft contract made, with its payment schedule." });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not make the contract." }); }
+    setBusy(false);
+  }
+
+  const L = "text-[10px] text-slate-500";
+  return (
+    <div className="space-y-2 text-sm">
+      {(terms.missing?.length || 0) > 0 && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">Not in the documents: {terms.missing!.join("; ")}.</div>}
+      {terms.amount_source && terms.amount_source !== "contract" && <div className="text-xs text-amber-700">The amount comes from the {terms.amount_source}, not a signed contract.</div>}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <label className={`${L} col-span-2`}>Contract name<input value={f.name} onChange={(e) => set("name", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Number<input value={f.number} onChange={(e) => set("number", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Amount ({cur})<input type="number" inputMode="decimal" value={f.amount} onChange={(e) => set("amount", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Contract date<input type="date" value={f.contractDate} onChange={(e) => set("contractDate", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Start<input type="date" value={f.start} onChange={(e) => set("start", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Completion{terms.duration_weeks ? ` (${terms.duration_weeks} weeks)` : ""}<input type="date" value={f.end} onChange={(e) => set("end", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Retention %<input type="number" inputMode="decimal" value={f.retention} onChange={(e) => set("retention", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={L}>Billing<select value={f.billing} onChange={(e) => set("billing", e.target.value)} className={`${input} w-full`}>
+          <option value="milestone">By stages / milestones</option><option value="monthly">Monthly</option><option value="completion">On completion</option><option value="time_materials">Time & materials</option></select></label>
+        <label className={L}>Warranty (months)<input type="number" value={f.warranty} onChange={(e) => set("warranty", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={`${L} col-span-2`}>Penalty<input value={f.penalty} onChange={(e) => set("penalty", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={`${L} col-span-2 sm:col-span-4`}>Payment terms<textarea rows={2} value={f.paymentTerms} onChange={(e) => set("paymentTerms", e.target.value)} className={`${input} w-full`} /></label>
+        <label className={`${L} col-span-2 sm:col-span-4`}>Scope of work<textarea rows={2} value={f.scope} onChange={(e) => set("scope", e.target.value)} className={`${input} w-full`} /></label>
+      </div>
+      <div className="font-semibold text-slate-800 dark:text-slate-200 pt-1">Payment schedule</div>
+      {rows.map((r, i) => (
+        <div key={i} className="grid grid-cols-2 sm:grid-cols-6 gap-2 rounded-lg border border-slate-200 dark:border-white/[0.08] p-2">
+          <input value={r.name} onChange={(e) => setRow(i, "name", e.target.value)} placeholder="Stage" className={`${input} col-span-2`} />
+          <input value={r.description} onChange={(e) => setRow(i, "description", e.target.value)} placeholder="What to finish to claim it" className={`${input} col-span-2`} />
+          <label className={L}>%<input type="number" inputMode="decimal" value={r.percent} onChange={(e) => setRow(i, "percent", e.target.value)} className={`${input} w-full`} /></label>
+          <label className={L}>{cur}<input type="number" inputMode="decimal" value={r.amount} onChange={(e) => setRow(i, "amount", e.target.value)} className={`${input} w-full`} /></label>
+          <label className={`${L} col-span-2 sm:col-span-6 flex items-center gap-2`}>Due<input type="date" value={r.due} onChange={(e) => setRow(i, "due", e.target.value)} className={input} />
+            <button onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="ml-auto text-xs font-semibold text-red-600 underline">Remove</button></label>
+        </div>
+      ))}
+      <button onClick={() => setRows((rs) => [...rs, { name: "", description: "", percent: "", amount: "", due: "" }])} className={`${btn} border border-slate-300 text-slate-700 dark:text-slate-300`}>+ Add a stage</button>
+      <div className={`text-xs ${amount && Math.abs(sumRows - amount) > 1 ? "text-amber-700 font-semibold" : "text-slate-500"}`}>
+        Stages add up to {cur} {Math.round(sumRows).toLocaleString()} of {cur} {Math.round(amount).toLocaleString()}{amount && Math.abs(sumRows - amount) > 1 ? ` (difference ${cur} ${Math.round(amount - sumRows).toLocaleString()}: retention, or a stage missing?)` : " ✓"}
+      </div>
+      {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}
+        {msg.ok && <button onClick={() => nav("/contracts")} className="ml-2 font-bold underline">Open Contracts →</button>}</div>}
+      <button onClick={() => void create()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Making…" : "✅ Make a draft contract with this schedule"}</button>
+      <p className="text-[11px] text-slate-500">It is made as a DRAFT on the Contracts page: check it there, then make it active. {terms.found_in ? `Read from: ${terms.found_in}.` : ""}</p>
+    </div>
+  );
+}
+function hash(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }

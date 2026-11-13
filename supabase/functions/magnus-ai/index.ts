@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -602,6 +602,78 @@ what to check; never make it up. Keep it under 120 words unless a list is really
       const aj = await ar.json();
       const answer = (aj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
       return jsonResponse({ success: true, data: { answer } }, 200);
+    }
+
+    // ── 📜 Contract terms from the project's documents (Project Reader) ──────────────────────────────────────────────
+    // Reads the reading's files again with ONE job: the money and time terms (amount, retention, advance, payment stages,
+    // dates, penalties, warranty). Nothing is created here: the app shows it to check, then makes a DRAFT contract.
+    if (action === "contract_terms") {
+      const readId = String(body.readId || "");
+      const { data: rd } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, project_id, file_ids, result").eq("id", readId).maybeSingle();
+      if (!rd || rd.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Reading not found." }, 404);
+      const { data: files } = await supabaseAdmin.from("project_files").select("id, file_name, file_path, folder")
+        .in("id", rd.file_ids || []).eq("company_id", profile.company_id).in("folder", ["client_boq", "drawing"]);
+      const toB64 = (u8: Uint8Array) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
+      const blocks: any[] = [];
+      let total = 0;
+      for (const f of files || []) {
+        if (!String(f.file_path).startsWith(`${profile.company_id}/`)) continue;
+        const name = String(f.file_name || "file"); const ext = (name.split(".").pop() || "").toLowerCase();
+        const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (!blob) continue;
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        total += buf.length; if (total > 28 * 1024 * 1024) break;
+        if (ext === "pdf") { blocks.push({ type: "text", text: `=== FILE: ${name} ===` }); blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: toB64(buf) } }); }
+        else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) { blocks.push({ type: "text", text: `=== FILE: ${name} ===` }); blocks.push({ type: "image", source: { type: "base64", media_type: ext === "jpg" ? "image/jpeg" : `image/${ext}`, data: toB64(buf) } }); }
+        else if (["xlsx", "xls", "csv"].includes(ext)) {
+          try {
+            const XLSX = await import("npm:xlsx@0.18.5");
+            const wb = XLSX.read(buf, { type: "array" });
+            let text = "";
+            for (const sn of wb.SheetNames.slice(0, 20)) {
+              const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false }).split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+              if (csv) text += `\n--- SHEET: ${sn} ---\n${csv}\n`;
+            }
+            blocks.push({ type: "text", text: `=== FILE: ${name} (spreadsheet as CSV) ===\n${text.slice(0, 120_000)}` });
+          } catch (_e) { /* skip */ }
+        }
+      }
+      if (blocks.length === 0) throw new Error("No readable files in this reading.");
+      const TERMS_PROMPT = `You are a careful Jamaican construction contracts administrator working for ${intro} (the CONTRACTOR).
+Read the documents above and pull out ONLY the contract's money and time terms, exactly as written. Do not invent anything:
+when a term is not in the documents, use null and list it in "missing".
+- contract amount (the agreed price; if there is no contract, the BOQ / budget total, and say so in "amount_source");
+- retention % and when it is released; advance / mobilisation payment (percent or amount); how and when payments are made;
+- the payment stages (stage payments / milestones / valuations) with percent and / or amount and what triggers each;
+- start date, completion date or duration, penalties / liquidated damages, warranty / defects period, governing law;
+- a two or three sentence scope of work.
+"billing_schedule" must be one of: "milestone", "monthly", "completion", "time_materials" (what the documents describe).
+Return ONLY valid JSON:
+{ "contract_name": "", "client": "", "reference": "", "contract_date": "YYYY-MM-DD or null", "start_date": null, "completion_date": null,
+  "duration_weeks": null, "contract_amount": 0, "currency": "JMD", "amount_source": "contract | BOQ | budget",
+  "retention_percent": null, "retention_release": null, "advance_percent": null, "advance_amount": null,
+  "payment_terms": "the payment terms in plain words (e.g. paid within 14 days of each certified valuation)",
+  "billing_schedule": "milestone", "penalty_clause": null, "warranty_period_months": null, "governing_law": "Jamaica",
+  "scope_of_work": "",
+  "payment_schedule": [ { "name": "", "description": "what has to be done to claim it", "percent": null, "amount": null, "due_date": null } ],
+  "missing": ["terms not found in the documents"], "found_in": "which file / page the terms came from" }`;
+      const tr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 4000, messages: [{ role: "user", content: [...blocks, { type: "text", text: TERMS_PROMPT }] }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!tr.ok) { const t = await tr.text(); console.error("Claude API error (contract_terms):", tr.status, t); throw new Error(`The AI could not read the terms (error ${tr.status}).`); }
+      const tj = await tr.json();
+      const raw = (tj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      let terms: any;
+      try { const m = raw.match(/\{[\s\S]*\}/); terms = JSON.parse(m ? m[0] : raw); } catch (_e) { throw new Error("The terms could not be read. Try again."); }
+      terms.kind = "contract_terms"; terms.from_read = rd.id;
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: rd.project_id, file_ids: rd.file_ids || [], file_names: [],
+        question: "Contract terms", result: terms, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, terms } }, 200);
     }
 
     let messages: any[] = [];
