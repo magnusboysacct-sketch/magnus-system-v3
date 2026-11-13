@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms" || action === "material_list") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -674,6 +674,67 @@ Return ONLY valid JSON:
         question: "Contract terms", result: terms, created_by: callerId,
       }).select("id, created_at").maybeSingle();
       return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, terms } }, 200);
+    }
+
+    // ── 🧱 Materials list from a saved reading (Project Reader) ──────────────────────────────────────────────────────
+    // The client's material / packing lists when there are any (copied exactly), otherwise worked out from the BOQ items.
+    // Grouped by the kind of supplier, so the app can turn each group into a purchase order. Nothing is created here.
+    if (action === "material_list") {
+      const readId = String(body.readId || "");
+      const { data: rd } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, project_id, file_ids, result").eq("id", readId).maybeSingle();
+      if (!rd || rd.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Reading not found." }, 404);
+      const { data: files } = await supabaseAdmin.from("project_files").select("id, file_name, file_path").in("id", rd.file_ids || []).eq("company_id", profile.company_id);
+      let sheets = "";
+      for (const f of files || []) {
+        if (!/\.(xlsx|xls|csv)$/i.test(String(f.file_name)) || !String(f.file_path).startsWith(`${profile.company_id}/`)) continue;
+        const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (!blob) continue;
+        try {
+          const XLSX = await import("npm:xlsx@0.18.5");
+          const wb = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: "array" });
+          for (const sn of wb.SheetNames.slice(0, 20)) {
+            const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+              .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+            if (csv) sheets += `\n--- ${f.file_name} / SHEET: ${sn} ---\n${csv}\n`;
+          }
+        } catch (_e) { /* skip */ }
+        if (sheets.length > 150_000) { sheets = sheets.slice(0, 150_000); break; }
+      }
+      const MAT_PROMPT = `You are an experienced Jamaican construction buyer working for ${intro}.
+What was read from the job's documents (JSON): ${JSON.stringify(rd.result).slice(0, 25_000)}
+${sheets ? `The job's spreadsheets, exact, as CSV:\n${sheets}` : "(No spreadsheet: work the materials out from the reading only.)"}
+
+Make the list of MATERIALS to buy or receive for this job:
+- If there are material / packing lists (e.g. "Local Packing List", "Overseas Packing List", "material list"), COPY them exactly:
+  each line with its quantity, unit and unit price (0 if none). A "local" list is bought locally by the contractor; an
+  "overseas" / shipped list is normally supplied by the client: mark it "supplied_by": "client" (unless it clearly says otherwise).
+  Skip lines with no quantity (0 or blank).
+- If there is no material list, work the main materials out from the BOQ items (cement in bags, sand and stone in m3,
+  blocks, steel bars by size in lengths, timber, zinc sheets, nails, plumbing and electrical fittings, paint...) with
+  quantities and the working in "note"; unit price 0 when unknown. Mark "supplied_by": "us".
+- Group every line under ONE supplier kind: "Hardware & building", "Blocks, sand & stone", "Steel", "Lumber", "Roofing",
+  "Plumbing", "Electrical", "Paint", "Tiles & finishes", "Other".
+Return ONLY valid JSON:
+{ "currency": "JMD",
+  "items": [ { "name": "", "description": "", "qty": 0, "unit": "", "unit_price": 0, "group": "Hardware & building", "supplied_by": "us", "for": "which part of the job", "source": "Local Packing List", "note": "" } ],
+  "notes": ["anything to know: prices missing, lists that disagree with the BOQ, items to confirm"] }`;
+      const mr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 12000, messages: [{ role: "user", content: MAT_PROMPT }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!mr.ok) { const t = await mr.text(); console.error("Claude API error (material_list):", mr.status, t); throw new Error(`The AI could not make the list (error ${mr.status}).`); }
+      const mj = await mr.json();
+      const raw = (mj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      let list: any;
+      try { const m = raw.match(/\{[\s\S]*\}/); list = JSON.parse(m ? m[0] : raw); } catch (_e) { throw new Error("The list could not be read. Try again."); }
+      list.kind = "material_list"; list.from_read = rd.id;
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: rd.project_id, file_ids: rd.file_ids || [], file_names: [],
+        question: "Materials list", result: list, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, list } }, 200);
     }
 
     let messages: any[] = [];

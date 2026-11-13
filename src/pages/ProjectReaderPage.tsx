@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { askProject, createBoqFromDraft, createContractFromTerms, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { askProject, createBoqFromDraft, createContractFromTerms, createPoFromMaterials, isMaterialList, makeMaterialList, type MaterialList, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -65,7 +65,7 @@ export default function ProjectReaderPage() {
         setFiles(usable);
         setChosen((c) => (c.size ? c : new Set(usable.filter(readable).map((f) => f.id))));
         setReads(rd);
-        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r)) ?? null);
+        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r)) ?? null);
       } catch (e) { if (alive) setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); }
     })();
     return () => { alive = false; };
@@ -258,14 +258,19 @@ export default function ProjectReaderPage() {
               terms={reads.find((r) => isContractTerms(r) && (r.result as unknown as ContractTerms).from_read === shown.id)}
               onTerms={(t) => setReads((rs) => [t, ...rs])} />
           )}
+          {shown.id && !shown.id.startsWith("tmp") && (
+            <MaterialsPanel read={shown} projectId={projectId} companyId={project?.company_id || null}
+              list={reads.find((r) => isMaterialList(r) && (r.result as unknown as MaterialList).from_read === shown.id)}
+              onList={(l) => setReads((rs) => [l, ...rs])} />
+          )}
         </div>
       )}
 
       {/* earlier readings */}
-      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r)) && (
+      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r)) && (
         <div className={`${card} p-4 space-y-2`}>
           <div className="font-semibold text-slate-800 dark:text-slate-100">Earlier readings</div>
-          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r)).map((r) => (
+          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r)).map((r) => (
             <div key={r.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${shown?.id === r.id ? "bg-violet-50 dark:bg-violet-500/10" : "bg-slate-50 dark:bg-white/[0.03]"}`}>
               <button onClick={() => { stop(); setShown(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-w-0 flex-1 text-left">
                 <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{r.result?.title || "Reading"}{r.question ? ` · "${r.question}"` : ""}</div>
@@ -715,3 +720,120 @@ function TermsEditor({ terms, projectId, companyId }: { terms: ContractTerms; pr
   );
 }
 function hash(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+
+// ── 🧱 Materials list → purchase orders ───────────────────────────────────────────────────────────────────────────────
+function MaterialsPanel({ read, list, projectId, companyId, onList }: {
+  read: SavedRead; list: SavedRead | undefined; projectId: string; companyId: string | null; onList: (l: SavedRead) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function make() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await makeMaterialList(read.id);
+      onList({ id: r.id || `tmp${Date.now()}`, created_at: r.created_at || new Date().toISOString(), file_names: [], question: "Materials list", result: r.list as unknown as ReadResult });
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not make the list."); }
+    setBusy(false);
+  }
+  return (
+    <div className="rounded-xl border-2 border-orange-200 dark:border-orange-500/30 p-3 space-y-3">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">🧱 Materials list → purchase orders</div>
+      {!list && <p className="text-sm text-slate-600 dark:text-slate-400">The client's material / packing lists are copied (or the main materials are worked out from the BOQ), grouped by the kind of supplier. Tick what to order and make a draft purchase order for each supplier.</p>}
+      {busy ? (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-orange-400 bg-orange-50 px-3 py-3 text-sm font-bold text-orange-900">
+          <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-orange-300 border-t-orange-700" />Making the materials list… (up to 2 minutes)
+        </div>
+      ) : <button onClick={() => void make()} className={`${btn} bg-orange-600 hover:bg-orange-500 text-white`}>{list ? "↻ Make the list again" : "🧱 Make the materials list"}</button>}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {list && <MaterialsEditor key={list.id} list={list.result as unknown as MaterialList} projectId={projectId} companyId={companyId} />}
+    </div>
+  );
+}
+
+function MaterialsEditor({ list, projectId, companyId }: { list: MaterialList; projectId: string; companyId: string | null }) {
+  const nav = useNavigate();
+  const cur = list.currency || "JMD";
+  const [rows, setRows] = useState(() => (list.items || []).map((m, i) => ({
+    key: i, on: m.supplied_by !== "client" && Number(m.qty) > 0, name: m.name || "", description: [m.description, m.for ? `For: ${m.for}` : ""].filter(Boolean).join(" · "),
+    qty: String(m.qty ?? ""), unit: m.unit || "", price: String(m.unit_price ?? 0), group: m.supplied_by === "client" ? "Supplied by the client" : (m.group || "Other"),
+    note: [m.source, m.note].filter(Boolean).join(" · "),
+  })));
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [pick, setPick] = useState<Record<string, { id: string; name: string; expected: string }>>({});
+  const [made, setMade] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    if (!companyId) return;
+    void import("../lib/bills").then(({ fetchSuppliers }) => fetchSuppliers(companyId)).then((s) => setSuppliers(s.map((x) => ({ id: x.id, name: x.name })))).catch(() => { /* typed names still work */ });
+  }, [companyId]);
+  const groups = Array.from(new Set(rows.map((r) => r.group))).sort((a, b) => (a === "Supplied by the client" ? 1 : b === "Supplied by the client" ? -1 : a.localeCompare(b)));
+  const set = (key: number, k: string, v: string | boolean) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, [k]: v } : r)));
+  const line = (r: (typeof rows)[number]) => (Number(r.qty) || 0) * (Number(r.price) || 0);
+
+  async function makePo(g: string) {
+    if (!companyId) return;
+    const sel = rows.filter((r) => r.group === g && r.on && Number(r.qty) > 0);
+    if (sel.length === 0) { setMsg({ ok: false, text: `Tick at least one line in "${g}".` }); return; }
+    const p = pick[g] || { id: "", name: "", expected: "" };
+    const sup = p.id ? suppliers.find((s) => s.id === p.id) : null;
+    if (!sup && !p.name.trim()) { setMsg({ ok: false, text: `Pick or type the supplier for "${g}".` }); return; }
+    setBusy(g); setMsg(null);
+    try {
+      const no = await createPoFromMaterials(projectId, companyId, { id: sup?.id || null, name: sup?.name || p.name }, `${g} materials`, p.expected || null,
+        sel.map((r) => ({ name: r.name, description: r.description, qty: Number(r.qty) || 0, unit: r.unit, price: Number(r.price) || 0 })));
+      setMade((m) => ({ ...m, [g]: no }));
+      setMsg({ ok: true, text: `✅ ${no} made (draft) for ${sup?.name || p.name}.` });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not make the purchase order." }); }
+    setBusy(null);
+  }
+
+  return (
+    <div className="space-y-3 text-sm">
+      {groups.map((g) => {
+        const gr = rows.filter((r) => r.group === g);
+        const ticked = gr.filter((r) => r.on);
+        const p = pick[g] || { id: "", name: "", expected: "" };
+        return (
+          <details key={g} className="rounded-lg border border-slate-200 dark:border-white/[0.08]" open={g !== "Supplied by the client"}>
+            <summary className="cursor-pointer px-3 py-2 font-semibold text-slate-800 dark:text-slate-200">{g} <span className="font-normal text-slate-500">· {gr.length} lines · ticked {cur} {Math.round(ticked.reduce((t, r) => t + line(r), 0)).toLocaleString()}</span>
+              {made[g] && <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-800">{made[g]}</span>}</summary>
+            <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+              {gr.map((r) => (
+                <div key={r.key} className={`px-3 py-1.5 ${r.on ? "" : "opacity-60"}`}>
+                  <div className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-1 h-4 w-4" checked={r.on} onChange={(e) => set(r.key, "on", e.target.checked)} />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">{r.name}</div>
+                      {(r.description || r.note) && <div className="text-[11px] text-slate-500">{[r.description, r.note].filter(Boolean).join(" · ")}</div>}
+                    </div>
+                  </div>
+                  <div className="mt-1 grid grid-cols-4 gap-2 pl-6">
+                    <input type="number" inputMode="decimal" value={r.qty} onChange={(e) => set(r.key, "qty", e.target.value)} className={`${input} py-1`} />
+                    <input value={r.unit} onChange={(e) => set(r.key, "unit", e.target.value)} className={`${input} py-1`} />
+                    <input type="number" inputMode="decimal" value={r.price} onChange={(e) => set(r.key, "price", e.target.value)} className={`${input} py-1`} />
+                    <div className="py-1 text-right font-semibold text-slate-700 dark:text-slate-300">{Math.round(line(r)).toLocaleString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 dark:border-white/[0.08] p-2">
+              <label className="text-[10px] text-slate-500">Supplier
+                <select value={p.id} onChange={(e) => setPick((m) => ({ ...m, [g]: { ...p, id: e.target.value } }))} className={`${input} block py-1`}>
+                  <option value="">Type a name →</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select></label>
+              {!p.id && <input value={p.name} onChange={(e) => setPick((m) => ({ ...m, [g]: { ...p, name: e.target.value } }))} placeholder="Supplier name" className={`${input} py-1 min-w-0 flex-1`} />}
+              <label className="text-[10px] text-slate-500">Needed by<input type="date" value={p.expected} onChange={(e) => setPick((m) => ({ ...m, [g]: { ...p, expected: e.target.value } }))} className={`${input} block py-1`} /></label>
+              <button onClick={() => void makePo(g)} disabled={busy !== null || ticked.length === 0} className={`${btn} bg-orange-600 hover:bg-orange-500 text-white`}>
+                {busy === g ? "Making…" : made[g] ? "📦 Make another PO" : `📦 Make PO (${ticked.length})`}</button>
+            </div>
+          </details>
+        );
+      })}
+      <div className="text-[11px] text-slate-500">Columns: quantity · unit · price each ({cur}) · line total. Lines "Supplied by the client" are not ticked: tick them only if you are buying them.</div>
+      {(list.notes?.length || 0) > 0 && <ul className="list-disc pl-5 text-xs text-slate-600 dark:text-slate-400">{list.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+      {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}
+        {msg.ok && <button onClick={() => nav(`/projects/${projectId}/procurement`)} className="ml-2 font-bold underline">Open Procurement →</button>}</div>}
+    </div>
+  );
+}

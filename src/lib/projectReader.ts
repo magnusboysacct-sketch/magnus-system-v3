@@ -225,3 +225,27 @@ export async function createContractFromTerms(projectId: string, companyId: stri
   }
   return id;
 }
+
+// ── 🧱 Materials list → purchase orders (Procurement page) ───────────────────────────────────────────────────────────
+export interface MaterialLine { name: string; description?: string; qty: number; unit?: string; unit_price?: number; group?: string; supplied_by?: string; for?: string; source?: string; note?: string }
+export interface MaterialList { kind: "material_list"; from_read: string; currency?: string; items: MaterialLine[]; notes?: string[] }
+export const isMaterialList = (r: SavedRead) => (r.result as unknown as { kind?: string })?.kind === "material_list";
+export async function makeMaterialList(readId: string): Promise<{ id: string | null; created_at: string | null; list: MaterialList }> {
+  return callAI({ action: "material_list", readId });
+}
+// One DRAFT purchase order with the given lines. Returns its number.
+export async function createPoFromMaterials(projectId: string, companyId: string, supplier: { id: string | null; name: string }, title: string,
+  expected: string | null, lines: { name: string; description: string; qty: number; unit: string; price: number }[]): Promise<string> {
+  const { generatePONumber, createPurchaseOrder, addPurchaseOrderItem } = await import("./purchaseOrders");
+  const po_number = await generatePONumber(companyId);
+  const r = await createPurchaseOrder({ project_id: projectId, supplier_id: supplier.id, supplier_name: supplier.name.trim() || "Supplier", po_number, title: title.slice(0, 200),
+    status: "draft", expected_date: expected, notes: "Made from the project documents by the Project Reader. Check quantities and prices before issuing." });
+  if (!r.success || !r.data) throw new Error(r.error || "Could not make the purchase order.");
+  const poId = (r.data as { id: string }).id;
+  for (const l of lines) {
+    if (!(l.qty > 0)) continue;
+    const a = await addPurchaseOrderItem(poId, { material_name: l.name.slice(0, 200), description: l.description || null, quantity: l.qty, unit: l.unit || null, unit_rate: Math.max(0, l.price) });
+    if (!a.success) throw new Error(`${po_number} was made, but "${l.name}" was not added: ${a.error}`);
+  }
+  return po_number;
+}
