@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -551,6 +551,57 @@ Return ONLY valid JSON: { "matches": [ { "i": 0, "c": "c2" } ] }   (c is null wh
       draft.library_size = libItems.length; draft.matched = items.filter((it) => it.library).length;
       await supabaseAdmin.from("project_ai_reads").update({ result: draft }).eq("id", row.id);
       return jsonResponse({ success: true, data: { id: row.id, draft } }, 200);
+    }
+
+    // ── 🎙️ Talk to your project: a question (typed or spoken) about a saved reading, with the conversation so far ─────────
+    // Answers from the reading and the BOQ spreadsheets as text (cheap; the drawings are not sent again). Nothing is saved.
+    if (action === "ask_project") {
+      const readId = String(body.readId || "");
+      const q = typeof body.question === "string" ? body.question.trim().slice(0, 1500) : "";
+      const history: { q: string; a: string }[] = Array.isArray(body.history)
+        ? body.history.slice(-6).map((h: any) => ({ q: String(h?.q || "").slice(0, 800), a: String(h?.a || "").slice(0, 1500) })) : [];
+      if (!q) throw new Error("Ask something first.");
+      const { data: rd } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, project_id, file_ids, result").eq("id", readId).maybeSingle();
+      if (!rd || rd.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Reading not found." }, 404);
+      const { data: project } = await supabaseAdmin.from("projects").select("name").eq("id", rd.project_id).maybeSingle();
+      const { data: files } = await supabaseAdmin.from("project_files").select("id, file_name, file_path").in("id", rd.file_ids || []).eq("company_id", profile.company_id);
+      let sheets = "";
+      for (const f of files || []) {
+        if (!/\.(xlsx|xls|csv)$/i.test(String(f.file_name)) || !String(f.file_path).startsWith(`${profile.company_id}/`)) continue;
+        const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (!blob) continue;
+        try {
+          const XLSX = await import("npm:xlsx@0.18.5");
+          const wb = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: "array" });
+          for (const sn of wb.SheetNames.slice(0, 20)) {
+            const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+              .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+            if (csv) sheets += `\n--- ${f.file_name} / SHEET: ${sn} ---\n${csv}\n`;
+          }
+        } catch (_e) { /* skip */ }
+        if (sheets.length > 120_000) { sheets = sheets.slice(0, 120_000); break; }
+      }
+      const ASK_PROMPT = `You are the site assistant of ${intro}, talking to a builder about the job "${String(project?.name || "").replace(/"/g, "'")}".
+What was read from the job's drawings, BOQ and contract (JSON): ${JSON.stringify(rd.result).slice(0, 30_000)}
+${sheets ? `The BOQ spreadsheet(s), exact, as CSV:\n${sheets}` : ""}
+${history.length ? `The conversation so far:\n${history.map((h) => `Builder: ${h.q}\nYou: ${h.a}`).join("\n")}` : ""}
+
+Builder: ${q}
+
+Answer in plain, simple spoken English: short sentences, no tables, no markdown, no bullet symbols (it is read out loud).
+Give the numbers with units. Say where it comes from (e.g. "the BOQ, page BQ6" or "the drawing"). Work things out when asked
+(quantities, money, materials), showing the working in one sentence. If the documents do not say, say so plainly and suggest
+what to check; never make it up. Keep it under 120 words unless a list is really needed.`;
+      const ar = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1500, messages: [{ role: "user", content: ASK_PROMPT }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!ar.ok) { const t = await ar.text(); console.error("Claude API error (ask_project):", ar.status, t); throw new Error(`The AI could not answer (error ${ar.status}).`); }
+      const aj = await ar.json();
+      const answer = (aj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
+      return jsonResponse({ success: true, data: { answer } }, 200);
     }
 
     let messages: any[] = [];

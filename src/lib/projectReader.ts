@@ -174,3 +174,9 @@ export async function createBoqFromDraft(projectId: string, companyId: string, d
     throw e;
   }
 }
+
+// ── 🎙️ Talk to your project ────────────────────────────────────────────────────────────────────────────────────────
+export async function askProject(readId: string, question: string, history: { q: string; a: string }[]): Promise<string> {
+  const r = await callAI<{ answer: string }>({ action: "ask_project", readId, question, history });
+  return r.answer;
+}

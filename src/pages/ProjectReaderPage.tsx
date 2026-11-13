@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { createBoqFromDraft, createMilestones, deleteRead, draftBoq, isBoqDraft, isPlan, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { askProject, createBoqFromDraft, createMilestones, deleteRead, draftBoq, isBoqDraft, isPlan, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -189,6 +189,8 @@ export default function ProjectReaderPage() {
               <div className="mt-1 whitespace-pre-line">{res.answer}</div>
             </div>
           )}
+
+          {shown.id && !shown.id.startsWith("tmp") && <AskBox key={shown.id} read={shown} />}
 
           {res.summary && <div className="space-y-2 text-sm leading-relaxed text-slate-800 dark:text-slate-200">{res.summary.split(/\n{2,}|\n/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}</div>}
 
@@ -506,6 +508,89 @@ function DraftEditor({ draft, projectId, companyId }: { draft: BoqDraft; project
         {msg.ok && <button onClick={() => nav(`/projects/${projectId}/boq`)} className="ml-2 font-bold underline">Open the BOQ →</button>}</div>}
       <button onClick={() => void save()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Saving…" : "✅ Save as a new draft BOQ"}</button>
       <p className="text-[11px] text-slate-500">It is saved as a NEW draft version: your existing BOQ is not changed. Check it on the BOQ page before you approve it.</p>
+    </div>
+  );
+}
+
+// ── 🎙️ Talk to your project: ask by voice or typing; the answer is shown and read out ─────────────────────────────────
+type Recog = { lang: string; interimResults: boolean; continuous: boolean; start: () => void; stop: () => void;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null };
+function makeRecognizer(): Recog | null {
+  const w = window as unknown as { SpeechRecognition?: new () => Recog; webkitSpeechRecognition?: new () => Recog };
+  const C = w.SpeechRecognition || w.webkitSpeechRecognition;
+  return C ? new C() : null;
+}
+
+function AskBox({ read }: { read: SavedRead }) {
+  const [text, setText] = useState("");
+  const [chat, setChat] = useState<{ q: string; a: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [speakOn, setSpeakOn] = useState(true);
+  const recRef = useRef<Recog | null>(null);
+  const heard = useRef("");
+  const canMic = typeof window !== "undefined" && !!((window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition);
+
+  async function send(q: string) {
+    const question = q.trim();
+    if (!question || busy) return;
+    setBusy(true); setErr(null); setText("");
+    try { window.speechSynthesis?.cancel(); } catch { /* fine */ }
+    try {
+      const a = await askProject(read.id, question, chat);
+      setChat((c) => [...c, { q: question, a }]);
+      if (speakOn) speakAll(a, () => { /* done */ });
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not answer."); setText(question); }
+    setBusy(false);
+  }
+  function mic() {
+    if (listening) { recRef.current?.stop(); return; }
+    const r = makeRecognizer();
+    if (!r) { setErr("This browser can't listen. Type the question instead (Chrome on Android listens best)."); return; }
+    try { window.speechSynthesis?.cancel(); } catch { /* fine */ }
+    r.lang = "en-US"; r.interimResults = true; r.continuous = false;
+    heard.current = "";
+    r.onresult = (e) => {
+      let t = "";
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      heard.current = t; setText(t);
+    };
+    r.onerror = (e) => { setErr(e.error === "not-allowed" ? "Allow the microphone for this site (🔒 by the web address), then try again." : e.error === "no-speech" ? "I didn't hear anything. Tap 🎙️ and speak." : `The microphone stopped (${e.error}).`); };
+    r.onend = () => { setListening(false); recRef.current = null; if (heard.current.trim()) void send(heard.current); };
+    recRef.current = r; setErr(null); setListening(true);
+    try { r.start(); } catch { setListening(false); }
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-fuchsia-200 dark:border-fuchsia-500/30 p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-semibold text-slate-800 dark:text-slate-100">🎙️ Ask about this job</div>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400"><input type="checkbox" checked={speakOn} onChange={(e) => setSpeakOn(e.target.checked)} /> Read answers out loud</label>
+      </div>
+      {chat.length === 0 && <p className="text-xs text-slate-500">Tap 🎙️ and ask out loud, or type. For example: "How many bags of cement for the slab?", "What is the total for the roof?", "What size bars in the footing?"</p>}
+      {chat.map((c, i) => (
+        <div key={i} className="space-y-1 text-sm">
+          <div className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-sm bg-fuchsia-600 px-3 py-2 text-white">{c.q}</div>
+          <div className="w-fit max-w-[95%] rounded-2xl rounded-bl-sm bg-slate-100 dark:bg-white/[0.06] px-3 py-2 text-slate-800 dark:text-slate-200 whitespace-pre-line">
+            {c.a}
+            <button onClick={() => speakAll(c.a, () => { /* done */ })} className="ml-2 text-xs underline text-fuchsia-700 dark:text-fuchsia-300">🔊</button>
+          </div>
+        </div>
+      ))}
+      {busy && <div className="flex items-center gap-2 text-sm text-fuchsia-800 dark:text-fuchsia-300"><span className="h-4 w-4 animate-spin rounded-full border-2 border-fuchsia-300 border-t-fuchsia-700" />Thinking…</div>}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      <div className="flex gap-2">
+        {canMic && (
+          <button onClick={mic} disabled={busy} title={listening ? "Stop listening" : "Ask out loud"}
+            className={`${btn} min-w-[52px] text-lg ${listening ? "bg-red-600 text-white animate-pulse" : "bg-fuchsia-600 hover:bg-fuchsia-500 text-white"}`}>{listening ? "⏹" : "🎙️"}</button>
+        )}
+        <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void send(text); }}
+          placeholder={listening ? "Listening… speak now" : "Type a question…"} className={`${input} min-w-0 flex-1`} />
+        <button onClick={() => void send(text)} disabled={busy || !text.trim()} className={`${btn} bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900`}>Ask</button>
+      </div>
+      <p className="text-[11px] text-slate-500">Answers come from this reading and the BOQ. For something only the drawing shows, do a new reading with your question (step 2 above).</p>
     </div>
   );
 }
