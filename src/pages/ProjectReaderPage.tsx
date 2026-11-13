@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { createMilestones, deleteRead, isPlan, listReads, planMilestones, readProjectFiles, speechText, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { createBoqFromDraft, createMilestones, deleteRead, draftBoq, isBoqDraft, isPlan, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -65,7 +65,7 @@ export default function ProjectReaderPage() {
         setFiles(usable);
         setChosen((c) => (c.size ? c : new Set(usable.filter(readable).map((f) => f.id))));
         setReads(rd);
-        setShown((s) => s ?? rd.find((r) => !isPlan(r)) ?? null);
+        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r)) ?? null);
       } catch (e) { if (alive) setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); }
     })();
     return () => { alive = false; };
@@ -246,14 +246,19 @@ export default function ProjectReaderPage() {
               plan={reads.find((r) => isPlan(r) && (r.result as unknown as MilestonePlan).from_read === shown.id)}
               onPlanned={(p) => setReads((rs) => [p, ...rs])} />
           )}
+          {shown.id && !shown.id.startsWith("tmp") && (
+            <BoqDraftPanel read={shown} projectId={projectId} companyId={project?.company_id || null}
+              draft={reads.find((r) => isBoqDraft(r) && (r.result as unknown as BoqDraft).from_read === shown.id)}
+              onDraft={(d) => setReads((rs) => [d, ...rs.filter((x) => x.id !== d.id)])} />
+          )}
         </div>
       )}
 
       {/* earlier readings */}
-      {reads.some((r) => !isPlan(r)) && (
+      {reads.some((r) => !isPlan(r) && !isBoqDraft(r)) && (
         <div className={`${card} p-4 space-y-2`}>
           <div className="font-semibold text-slate-800 dark:text-slate-100">Earlier readings</div>
-          {reads.filter((r) => !isPlan(r)).map((r) => (
+          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r)).map((r) => (
             <div key={r.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${shown?.id === r.id ? "bg-violet-50 dark:bg-violet-500/10" : "bg-slate-50 dark:bg-white/[0.03]"}`}>
               <button onClick={() => { stop(); setShown(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-w-0 flex-1 text-left">
                 <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{r.result?.title || "Reading"}{r.question ? ` · "${r.question}"` : ""}</div>
@@ -378,6 +383,129 @@ function PlanEditor({ plan, projectId, companyId }: { plan: MilestonePlan; proje
         {busy ? "Creating…" : `✅ Create ${ticked.length} milestone${ticked.length === 1 ? "" : "s"}`}
       </button>
       <p className="text-[11px] text-slate-500">Money comes from the BOQ as Claude grouped it: check it against the BOQ before you rely on it. The dates follow each other from the start date; change them later on the project page.</p>
+    </div>
+  );
+}
+
+// ── 📋 Step 3: draft BOQ from this reading ────────────────────────────────────────────────────────────────────────────
+function BoqDraftPanel({ read, draft, projectId, companyId, onDraft }: {
+  read: SavedRead; draft: SavedRead | undefined; projectId: string; companyId: string | null; onDraft: (d: SavedRead) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const asSaved = (id: string | null, created: string | null, d: BoqDraft): SavedRead =>
+    ({ id: id || `tmp${Date.now()}`, created_at: created || new Date().toISOString(), file_names: [], question: "Draft BOQ", result: d as unknown as ReadResult });
+  async function make() {
+    setErr(null);
+    try {
+      setBusy("Copying the BOQ… (up to 2 minutes)");
+      const r = await draftBoq(read.id);
+      onDraft(asSaved(r.id, r.created_at, r.draft));
+      if (r.id) {
+        setBusy("Matching the items to your Rate Library… (up to a minute)");
+        const m = await matchBoq(r.id);
+        onDraft(asSaved(m.id, r.created_at, m.draft));
+      }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not make the BOQ."); }
+    setBusy(null);
+  }
+  async function rematch() {
+    if (!draft) return;
+    setErr(null); setBusy("Matching the items to your Rate Library… (up to a minute)");
+    try { const m = await matchBoq(draft.id); onDraft(asSaved(m.id, draft.created_at, m.draft)); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Could not match."); }
+    setBusy(null);
+  }
+  return (
+    <div className="rounded-xl border-2 border-teal-200 dark:border-teal-500/30 p-3 space-y-3">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">📋 Draft BOQ from this reading</div>
+      {!draft && <p className="text-sm text-slate-600 dark:text-slate-400">The client's BOQ is copied into a BOQ in this app (sections, items, quantities, units and rates, exactly), and each item is matched to your Rate Library so you can compare their rate with yours. With only a drawing, a first BOQ is built from it (quantities to check, rates to fill in).</p>}
+      {busy ? (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-teal-400 bg-teal-50 px-3 py-3 text-sm font-bold text-teal-900">
+          <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-teal-300 border-t-teal-700" />{busy}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => void make()} className={`${btn} bg-teal-600 hover:bg-teal-500 text-white`}>{draft ? "↻ Make it again" : "📋 Make a draft BOQ"}</button>
+          {draft && <button onClick={() => void rematch()} className={`${btn} border border-teal-500 text-teal-700 dark:text-teal-400`}>↻ Match to my Rate Library again</button>}
+        </div>
+      )}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {draft && <DraftEditor key={`${draft.id}:${(draft.result as unknown as BoqDraft).matched ?? "-"}`} draft={draft.result as unknown as BoqDraft} projectId={projectId} companyId={companyId} />}
+    </div>
+  );
+}
+
+function DraftEditor({ draft, projectId, companyId }: { draft: BoqDraft; projectId: string; companyId: string | null }) {
+  const nav = useNavigate();
+  const cur = draft.currency || "JMD";
+  const [rates, setRates] = useState<"client" | "library">("client");
+  const [skipZero, setSkipZero] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const all = draft.sections.flatMap((s) => s.items);
+  const clientRate = (it: DraftItem) => (Number(it.material_rate) || 0) + (Number(it.labour_rate) || 0);
+  const total = all.reduce((t, it) => t + (Number(it.qty) || 0) * clientRate(it), 0);
+  const libTotal = all.reduce((t, it) => t + (Number(it.qty) || 0) * (rates === "library" && it.library?.rate != null ? Number(it.library.rate) : clientRate(it)), 0);
+  const zero = all.filter((it) => !(Number(it.qty) > 0)).length;
+  const matched = all.filter((it) => it.library).length;
+  const check = Number(draft.total_check) || 0;
+  const off = check > 0 && Math.abs(total - check) > Math.max(1, check * 0.002);
+
+  async function save() {
+    if (!companyId) { setMsg({ ok: false, text: "The project is still loading. Try again." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const r = await createBoqFromDraft(projectId, companyId, draft, rates, skipZero);
+      setMsg({ ok: true, text: `✅ Saved as a draft BOQ, version ${r.version} (${r.items} items). Open it to check, change anything and approve it.` });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not save the BOQ." }); }
+    setBusy(false);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+        <div className="rounded-lg bg-slate-50 dark:bg-white/[0.04] p-2"><div className="text-[10px] uppercase text-slate-500">Sections · items</div><div className="font-semibold">{draft.sections.length} · {all.length}</div></div>
+        <div className="rounded-lg bg-slate-50 dark:bg-white/[0.04] p-2"><div className="text-[10px] uppercase text-slate-500">Total (client rates)</div><div className="font-semibold">{money(total, cur)}</div></div>
+        <div className={`rounded-lg p-2 ${off ? "bg-amber-50 text-amber-900" : "bg-slate-50 dark:bg-white/[0.04]"}`}><div className="text-[10px] uppercase text-slate-500">BOQ says</div><div className="font-semibold">{check ? money(check, cur) : "—"} {check > 0 && (off ? `(off by ${money(Math.abs(total - check), cur)})` : "✓")}</div></div>
+        <div className="rounded-lg bg-slate-50 dark:bg-white/[0.04] p-2"><div className="text-[10px] uppercase text-slate-500">Matched to your library</div><div className="font-semibold">{matched} of {all.length}{draft.library_size === 0 ? " (library empty)" : ""}</div></div>
+      </div>
+      {draft.sections.map((s, i) => (
+        <details key={i} className="rounded-lg border border-slate-200 dark:border-white/[0.08]" open={i === 0}>
+          <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200">{s.title} <span className="font-normal text-slate-500">· {s.items.length} items · {money(s.items.reduce((t, it) => t + (Number(it.qty) || 0) * clientRate(it), 0), cur)}</span></summary>
+          <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+            {s.items.map((it, j) => {
+              const c = clientRate(it), l = it.library?.rate != null ? Number(it.library.rate) : null;
+              const diff = l != null && c > 0 ? Math.round(((l - c) / c) * 100) : null;
+              return (
+                <div key={j} className={`px-3 py-1.5 text-xs ${Number(it.qty) > 0 ? "" : "opacity-60"}`}>
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{it.ref ? `${it.ref}. ` : ""}{it.name}</span>
+                    <span className="text-slate-700 dark:text-slate-300">{Number(it.qty) || 0} {it.unit || ""} × {money(c, cur)} = <b>{money((Number(it.qty) || 0) * c, cur)}</b></span>
+                  </div>
+                  {it.library ? (
+                    <div className="text-teal-700 dark:text-teal-400">Your library: {it.library.name} · {l != null ? money(l, cur) : "no rate"}{it.library.unit ? ` / ${it.library.unit}` : ""}
+                      {diff != null && <span className={diff > 10 ? " text-red-600 font-bold" : diff < -10 ? " text-green-700 font-bold" : ""}> ({diff > 0 ? "+" : ""}{diff}% vs client)</span>}</div>
+                  ) : <div className="text-slate-400">Not in your library</div>}
+                  {!(Number(it.qty) > 0) && <div className="text-amber-700">No quantity</div>}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      ))}
+      {(draft.notes?.length || 0) > 0 && <ul className="list-disc pl-5 text-xs text-slate-600 dark:text-slate-400">{draft.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+      <div className="rounded-lg bg-slate-50 dark:bg-white/[0.04] p-3 space-y-2 text-sm">
+        <div className="font-semibold text-slate-800 dark:text-slate-200">Rates to use</div>
+        <label className="flex items-center gap-2"><input type="radio" checked={rates === "client"} onChange={() => setRates("client")} /> The client's rates (material + labour), as in their BOQ</label>
+        <label className="flex items-center gap-2"><input type="radio" checked={rates === "library"} onChange={() => setRates("library")} disabled={matched === 0} /> My Rate Library rate where an item is matched (the client's rate for the rest)</label>
+        {zero > 0 && <label className="flex items-center gap-2"><input type="checkbox" checked={skipZero} onChange={(e) => setSkipZero(e.target.checked)} /> Leave out the {zero} line{zero === 1 ? "" : "s"} with no quantity</label>}
+        <div className="text-xs text-slate-500">BOQ total with these rates: <b>{money(libTotal, cur)}</b></div>
+      </div>
+      {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}
+        {msg.ok && <button onClick={() => nav(`/projects/${projectId}/boq`)} className="ml-2 font-bold underline">Open the BOQ →</button>}</div>}
+      <button onClick={() => void save()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>{busy ? "Saving…" : "✅ Save as a new draft BOQ"}</button>
+      <p className="text-[11px] text-slate-500">It is saved as a NEW draft version: your existing BOQ is not changed. Check it on the BOQ page before you approve it.</p>
     </div>
   );
 }

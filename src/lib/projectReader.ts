@@ -97,3 +97,80 @@ export async function createMilestones(projectId: string, companyId: string, lis
   if (error) throw new Error(error.message);
   return rows.length;
 }
+
+// ── 📋 Step 3: a draft BOQ from a reading (copied from the client's BOQ, or built from the drawing) ──────────────────────
+export interface DraftItem {
+  ref?: string; name: string; description?: string; unit?: string; qty: number; material_rate: number; labour_rate: number; source?: string;
+  library?: { id: string; name: string; unit: string | null; type: string | null; rate: number | null };
+}
+export interface BoqDraft { kind: "boq_draft"; from_read: string; currency?: string; total_check?: number; sections: { title: string; items: DraftItem[] }[]; notes?: string[]; library_size?: number; matched?: number }
+export const isBoqDraft = (r: SavedRead) => (r.result as unknown as { kind?: string })?.kind === "boq_draft";
+
+export async function draftBoq(readId: string): Promise<{ id: string | null; created_at: string | null; draft: BoqDraft }> {
+  return callAI({ action: "draft_boq", readId });
+}
+export async function matchBoq(draftId: string): Promise<{ id: string; draft: BoqDraft }> {
+  return callAI({ action: "match_boq", draftId });
+}
+
+const unitKey = (u: string | null | undefined) => String(u || "").toLowerCase().replace(/\s|\./g, "").replace(/^(sqm|sqm²|m²)$/, "m2").replace(/^(cum|m³)$/, "m3")
+  .replace(/^(no|nos|nr|each|ea|pc|pcs)$/, "no").replace(/^(lm|linm|meter|metre)$/, "m").replace(/^(kgs)$/, "kg");
+
+// Saves the draft as a NEW draft BOQ version of the project (never touches an existing version).
+// rates: "client" = material + labour from the client's BOQ; "library" = your Rate Library rate where an item is matched.
+export async function createBoqFromDraft(projectId: string, companyId: string, draft: BoqDraft, rates: "client" | "library", skipZeroQty: boolean)
+  : Promise<{ version: number; items: number }> {
+  const { data: last, error: e0 } = await supabase.from("boq_headers").select("version").eq("project_id", projectId).order("version", { ascending: false }).limit(1);
+  if (e0) throw new Error(e0.message);
+  const version = (Number((last || [])[0]?.version) || 0) + 1;
+
+  // units: use the ones you have; add the missing ones to your unit list
+  const { data: units } = await supabase.from("master_units").select("id, name");
+  const unitMap = new Map<string, string>();
+  ((units || []) as { id: string; name: string }[]).forEach((u) => { if (!unitMap.has(unitKey(u.name))) unitMap.set(unitKey(u.name), u.id); });
+  const unitId = async (u?: string) => {
+    const k = unitKey(u);
+    if (!k) return null;
+    if (unitMap.has(k)) return unitMap.get(k)!;
+    const { data: nu } = await supabase.from("master_units").insert({ name: String(u).trim().slice(0, 20), company_id: companyId, is_active: true, unit_type: "other", sort_order: 999 }).select("id").single();
+    const id = (nu as { id: string } | null)?.id || null;
+    if (id) unitMap.set(k, id);
+    return id;
+  };
+
+  const { data: hdr, error: e1 } = await supabase.from("boq_headers").insert([{ project_id: projectId, status: "draft", version }]).select("id").single();
+  if (e1 || !hdr) throw new Error(e1?.message || "Could not create the BOQ.");
+  const boqId = (hdr as { id: string }).id;
+  try {
+    const sections = draft.sections.map((s) => ({ ...s, items: s.items.filter((it) => !skipZeroQty || Number(it.qty) > 0) })).filter((s) => s.items.length > 0);
+    const { data: secs, error: e2 } = await supabase.from("boq_sections")
+      .insert(sections.map((s, i) => ({ boq_id: boqId, sort_order: i, title: (s.title || `Section ${i + 1}`).slice(0, 200), scope: "" }))).select("id, sort_order");
+    if (e2) throw new Error(e2.message);
+    const secId = new Map(((secs || []) as { id: string; sort_order: number }[]).map((s) => [s.sort_order, s.id]));
+    const rows: Record<string, unknown>[] = [];
+    for (const [i, s] of sections.entries()) {
+      for (const [j, it] of s.items.entries()) {
+        const client = (Number(it.material_rate) || 0) + (Number(it.labour_rate) || 0);
+        const lib = it.library && it.library.rate != null ? Number(it.library.rate) : null;
+        const rate = rates === "library" && lib != null ? lib : client;
+        const desc = [it.ref ? `(${it.ref})` : "", it.description || "",
+          client ? `Client rate: material ${it.material_rate || 0} + labour ${it.labour_rate || 0}.` : "", it.source ? `[${it.source}]` : ""].filter(Boolean).join(" ");
+        rows.push({
+          section_id: secId.get(i), sort_order: j, pick_type: "", pick_category: "", pick_item: "", pick_variant: "",
+          cost_item_id: it.library?.id || null, item_name: (it.name || "Item").slice(0, 200), description: desc.slice(0, 2000),
+          unit_id: await unitId(it.unit), qty: Number(it.qty) || 0, rate: Math.round(rate * 100) / 100, measurements: [],
+        });
+      }
+    }
+    for (let k = 0; k < rows.length; k += 200) {
+      const { error: e3 } = await supabase.from("boq_section_items").insert(rows.slice(k, k + 200));
+      if (e3) throw new Error(e3.message);
+    }
+    await supabase.rpc("sync_boq_budget_to_cost_events", { p_boq_id: boqId });
+    return { version, items: rows.length };
+  } catch (e) {
+    await supabase.from("boq_sections").delete().eq("boq_id", boqId);   // nothing half-made is left behind (items go with their section)
+    await supabase.from("boq_headers").delete().eq("id", boqId);
+    throw e;
+  }
+}

@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -416,6 +416,141 @@ Return ONLY valid JSON:
         question: "Milestone plan", result: plan, created_by: callerId,
       }).select("id, created_at").maybeSingle();
       return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, plan } }, 200);
+    }
+
+    // ── 📋 Draft BOQ from a saved Project Reader reading (step 3) ──────────────────────────────────────────────────────
+    // 1. Claude copies the client's BOQ spreadsheet into sections / items EXACTLY (or, with no BOQ, builds one from what the
+    //    reading saw on the drawing, quantities marked "check"). 2. Each item is matched to the company's Rate Library:
+    //    the code picks the 6 closest library items by words and unit, Claude picks the right one (or none).
+    //    Nothing is created here: the app shows the draft to check, then saves it as a new draft BOQ version.
+    if (action === "draft_boq") {
+      const readId = String(body.readId || "");
+      const { data: rd } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, project_id, file_ids, result").eq("id", readId).maybeSingle();
+      if (!rd || rd.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Reading not found." }, 404);
+      const { data: files } = await supabaseAdmin.from("project_files").select("id, file_name, file_path").in("id", rd.file_ids || []).eq("company_id", profile.company_id);
+      let sheets = "";
+      for (const f of files || []) {
+        if (!/\.(xlsx|xls|csv)$/i.test(String(f.file_name)) || !String(f.file_path).startsWith(`${profile.company_id}/`)) continue;
+        const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (!blob) continue;
+        try {
+          const XLSX = await import("npm:xlsx@0.18.5");
+          const wb = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: "array" });
+          for (const sn of wb.SheetNames.slice(0, 20)) {
+            const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+              .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+            if (csv) sheets += `\n--- ${f.file_name} / SHEET: ${sn} ---\n${csv}\n`;
+          }
+        } catch (_e) { /* skip */ }
+        if (sheets.length > 150_000) { sheets = sheets.slice(0, 150_000); break; }
+      }
+      const callClaude = async (prompt: string, maxTokens: number) => {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }),
+        });
+        await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+        if (!r.ok) { const t = await r.text(); console.error("Claude API error (draft_boq):", r.status, t); throw new Error(`The AI could not make the BOQ (error ${r.status}).`); }
+        const j = await r.json();
+        const raw = (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+        const m = raw.match(/\{[\s\S]*\}/);
+        return JSON.parse(m ? m[0] : raw);
+      };
+
+      const BOQ_PROMPT = `You are a careful Jamaican quantity surveyor working for ${intro}.
+${sheets ? `Below is the client's BOQ spreadsheet, exact, as CSV (one line per row):\n${sheets}\n
+Turn it into a clean BOQ. COPY the numbers EXACTLY as they are in the spreadsheet - never change a quantity or a rate:
+- sections = the trade headings (e.g. SUBSTRUCTURE - Excavating and filling, IN SITU CONCRETE, BLOCKWORK, ROOF ...);
+- one item per priced line; a description that wraps over several rows is ONE item (join the rows; the item takes the
+  quantity / unit / rates from the row that has them); keep the item letter as "ref";
+- "material_rate" and "labour_rate" per unit from the MATERIAL and LABOUR columns (0 if blank); if the sheet has one rate
+  column only, put it in material_rate;
+- skip headings with nothing priced, blank rows, page totals, collection / summary pages, cover / budget sheets and packing
+  lists; keep lines that have a rate but no quantity with qty 0 (they are listed so nothing is lost);
+- "total_check": the BOQ grand total as printed in the spreadsheet.` :
+`There is no BOQ spreadsheet. Build a first BOQ from what was read from the drawings (JSON below): the usual trade sections
+and items for this job, quantities worked out from the drawing dimensions (show the working in "description"), units,
+rates 0 (the user prices them), and source "drawing - check".`}
+
+What was read from the project's documents (JSON): ${JSON.stringify(rd.result).slice(0, 30_000)}
+
+Return ONLY valid JSON:
+{ "currency": "JMD", "total_check": 0,
+  "sections": [ { "title": "", "items": [ { "ref": "", "name": "short item name", "description": "full description", "unit": "m2", "qty": 0, "material_rate": 0, "labour_rate": 0, "source": "BOQ page BQ2" } ] } ],
+  "notes": ["anything worth knowing: lines that were unclear, items with no quantity, totals that do not add up"] }`;
+
+      const draft = await callClaude(BOQ_PROMPT, 16000);
+      draft.kind = "boq_draft"; draft.from_read = rd.id;
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: rd.project_id, file_ids: rd.file_ids || [], file_names: [],
+        question: "Draft BOQ", result: draft, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, draft } }, 200);
+    }
+
+    // ── 📋 step 3b: match a saved draft BOQ to the company's Rate Library (own request, so neither runs too long) ────
+    if (action === "match_boq") {
+      const draftId = String(body.draftId || "");
+      const { data: row } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, result").eq("id", draftId).maybeSingle();
+      if (!row || row.company_id !== profile.company_id || row.result?.kind !== "boq_draft") return jsonResponse({ success: false, error: "Draft BOQ not found." }, 404);
+      const draft: any = row.result;
+      const items: any[] = [];
+      for (const s of draft.sections || []) for (const it of s.items || []) { delete it.library; items.push(it); }
+      const callClaude = async (prompt: string, maxTokens: number) => {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }),
+        });
+        await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+        if (!r.ok) { const t = await r.text(); console.error("Claude API error (match_boq):", r.status, t); throw new Error(`The AI could not make the BOQ (error ${r.status}).`); }
+        const j = await r.json();
+        const raw = (j.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+        const m = raw.match(/\{[\s\S]*\}/);
+        return JSON.parse(m ? m[0] : raw);
+      };
+
+      // ── match to the Rate Library ──
+      const { data: lib } = await supabaseAdmin.from("v_cost_items_current")
+        .select("id, item_name, unit, item_type, current_rate, company_id, is_active")
+        .or(`company_id.eq.${profile.company_id},company_id.is.null`).limit(6000);
+      const libItems = (lib || []).filter((l: any) => l.is_active !== false && l.item_name);
+      const unitKey = (u: string) => String(u || "").toLowerCase().replace(/\s|\./g, "").replace(/^(sqm|sq\.?m|m²)$/, "m2").replace(/^(cum|cu\.?m|m³)$/, "m3")
+        .replace(/^(no|nos|nr|each|ea|pc|pcs)$/, "no").replace(/^(lm|lin\.?m|meter|metre|m)$/, "m").replace(/^(kgs?)$/, "kg");
+      const STOP = new Set(["and", "the", "of", "in", "to", "as", "for", "with", "on", "a", "or", "by", "at", "be", "all", "including", "described", "other", "equal", "approved"]);
+      const words = (t: string) => new Set(String(t || "").toLowerCase().replace(/[^a-z0-9.]+/g, " ").split(" ").filter((w) => w.length > 1 && !STOP.has(w)));
+      const libWords = libItems.map((l: any) => ({ l, w: words(l.item_name), u: unitKey(l.unit) }));
+      const cands = items.map((it) => {
+        const w = words(`${it.name} ${it.description || ""}`);
+        const u = unitKey(it.unit);
+        return libWords.map(({ l, w: lw, u: lu }) => {
+          let sc = 0; for (const x of lw) if (w.has(x)) sc += /\d/.test(x) ? 2 : 1;
+          if (sc > 0 && lu && lu === u) sc += 1.5;
+          return { l, sc };
+        }).filter((c) => c.sc >= 2).sort((a, b) => b.sc - a.sc).slice(0, 6).map((c) => c.l);
+      });
+      if (libItems.length && cands.some((c) => c.length)) {
+        const lines = items.map((it, i) => cands[i].length
+          ? `${i}| ${it.name} | ${it.unit} | ${String(it.description || "").slice(0, 120)}\n${cands[i].map((c: any, k: number) => `   c${k}: ${c.item_name} | ${c.unit || "-"} | ${c.item_type || ""} | rate ${c.current_rate ?? "-"}`).join("\n")}`
+          : "").filter(Boolean).join("\n");
+        try {
+          const mm = await callClaude(`Match each BOQ item to the company's Rate Library item that is the SAME work or material (same thing, same size / thickness / grade, sensible unit).
+If none of the choices is really the same thing, answer null. Do not guess.
+${lines}
+Return ONLY valid JSON: { "matches": [ { "i": 0, "c": "c2" } ] }   (c is null when nothing matches)`, 4000);
+          for (const m of mm.matches || []) {
+            const i = Number(m.i), k = m.c ? Number(String(m.c).replace(/\D/g, "")) : NaN;
+            if (items[i] && cands[i] && Number.isFinite(k) && cands[i][k]) {
+              const c = cands[i][k];
+              items[i].library = { id: c.id, name: c.item_name, unit: c.unit, type: c.item_type, rate: c.current_rate };
+            }
+          }
+        } catch (e) { (draft.notes ||= []).push("Matching to the Rate Library did not finish: " + (e as Error).message); }
+      }
+      draft.library_size = libItems.length; draft.matched = items.filter((it) => it.library).length;
+      await supabaseAdmin.from("project_ai_reads").update({ result: draft }).eq("id", row.id);
+      return jsonResponse({ success: true, data: { id: row.id, draft } }, 200);
     }
 
     let messages: any[] = [];
