@@ -238,6 +238,10 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  // Laptop / desktop: the account menu at the bottom of the side bar folds away (tap your email to open it), so the
+  // main menu has room. Phones and tablets keep it open as before. Remembered on this computer.
+  const [acctOpen, setAcctOpen] = useState<boolean>(() => { try { return localStorage.getItem("magnus_acct_open") === "1"; } catch { return false; } });
+  const toggleAcct = () => setAcctOpen((v) => { try { localStorage.setItem("magnus_acct_open", v ? "0" : "1"); } catch { /* fine */ } return !v; });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
@@ -463,64 +467,68 @@ export default function AppLayout() {
         {/* Bottom — user + collapse */}
         <div className="border-t border-slate-200 dark:border-white/[0.06] p-2 flex-shrink-0 space-y-1">
           {user && !collapsed && (
-            <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg">
+            <button type="button" onClick={toggleAcct} title={acctOpen ? "Hide the account menu" : "Show the account menu"}
+              className="w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-left lg:hover:bg-slate-100 lg:dark:hover:bg-white/5">
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-500 to-slate-700 dark:from-slate-600 dark:to-slate-800 flex items-center justify-center text-[9px] font-bold text-white dark:text-slate-300 flex-shrink-0">
                 {(user.email?.[0] || "U").toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 truncate">{user.email}</div>
               </div>
-            </div>
+              <span className="hidden lg:inline text-slate-400">{acctOpen ? <ChevronLeft size={13} className="-rotate-90" /> : <ChevronLeft size={13} className="rotate-90" />}</span>
+            </button>
           )}
           <NotificationBell label={!collapsed}
-            className={cn("w-full px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")} />
+            className={cn("w-full px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")} />
+          <div className={cn("space-y-1", !collapsed && !acctOpen && "lg:hidden")}>
           {(userRole === "director" || userRole === "admin") && (
             <button onClick={() => navigate("/billing")} title="My plan"
-              className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+              className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
               <CreditCard size={13}/>
               {!collapsed && <span>My plan</span>}
             </button>
           )}
           {(userRole === "director" || userRole === "admin") && (
             <button onClick={() => navigate("/support-access")} title="Support access"
-              className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+              className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
               <LifeBuoy size={13}/>
               {!collapsed && <span>Support access</span>}
             </button>
           )}
           {platform?.is_admin && (
             <button onClick={() => navigate("/hq")} title="Magnus HQ"
-              className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+              className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
               <ShieldCheck size={13}/>
               {!collapsed && <span>Magnus HQ</span>}
             </button>
           )}
           <button onClick={() => navigate("/my-signature")}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <PenTool size={13}/>
             {!collapsed && <span>My Signature</span>}
           </button>
           {/* Opens the public feedback page (anyone can send ideas, signed in or not). */}
           <a href="/feedback" title="Ideas & feedback"
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <MessageSquare size={13}/>
             {!collapsed && <span>Ideas & feedback</span>}
           </a>
           <button onClick={() => navigate("/help")}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <HelpCircle size={13}/>
             {!collapsed && <span>Help & Training</span>}
           </button>
           <button onClick={toggleTheme}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <span style={{fontSize:13}}>{theme === "dark" ? "☀️" : "🌙"}</span>
             {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
           </button>
           <button onClick={handleLogout}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 lg:py-1.5 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
             <LogOut size={13}/>
             {!collapsed && "Sign out"}
           </button>
+          </div>
           <button onClick={() => setCollapsed(v => !v)}
             className={cn("w-full hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors", collapsed && "justify-center")}>
             {collapsed ? <ChevronRight size={13}/> : <><ChevronLeft size={13}/><span>Collapse</span></>}
