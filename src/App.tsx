@@ -32,6 +32,7 @@ import ClientProjectPage      from "./pages/ClientProjectPage";
 import WorkerLoginPage        from "./pages/WorkerLoginPage";
 import GetAppPage             from "./pages/GetAppPage";
 import ProjectFilesPage       from "./pages/ProjectFilesPage";
+import ProjectReaderPage      from "./pages/ProjectReaderPage";
 import DocumentsPage          from "./pages/DocumentsPage";
 import ReceiptInboxPage       from "./pages/ReceiptInboxPage";
 import WorkerHomePage         from "./pages/WorkerHomePage";
@@ -339,6 +340,7 @@ export default function App() {
               <Route path="/projects/:projectId/finance/reports"      element={<ByUrlProject><FinanceGuard level="project"><FinanceReportsPage /></FinanceGuard></ByUrlProject>} />
               <Route path="/projects/:projectId/reports"      element={<ByUrlProject><ReportsPage /></ByUrlProject>} />
               <Route path="/projects/:projectId/files"        element={<ByUrlProject><ProjectFilesPage /></ByUrlProject>} />{/* Client BOQ + Statements folders */}
+              <Route path="/projects/:projectId/reader"       element={<ByUrlProject><ProjectReaderPage /></ByUrlProject>} />{/* 🤖 Project Reader */}
 
               {/* Estimating */}
               <Route path="/estimates"    element={<EstimatesPage />} />

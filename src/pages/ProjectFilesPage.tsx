@@ -24,7 +24,7 @@ export default function ProjectFilesPage() {
   const { projectId = "" } = useParams();
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
-  const folder: FileFolder = sp.get("folder") === "statement" ? "statement" : "client_boq";
+  const folder: FileFolder = sp.get("folder") === "statement" ? "statement" : sp.get("folder") === "drawing" ? "drawing" : "client_boq";
   const [project, setProject] = useState<{ name: string; company_id: string } | null>(null);
   const [me, setMe] = useState<{ id: string; role: string; finance: string } | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -70,7 +70,8 @@ export default function ProjectFilesPage() {
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
   const inFolder = useMemo(() => files.filter((f) => f.folder === folder), [files, folder]);
-  const counts = useMemo(() => ({ client_boq: files.filter((f) => f.folder === "client_boq").length, statement: files.filter((f) => f.folder === "statement").length }), [files]);
+  const counts = useMemo(() => ({ client_boq: files.filter((f) => f.folder === "client_boq").length, statement: files.filter((f) => f.folder === "statement").length,
+    drawing: files.filter((f) => f.folder === "drawing").length }), [files]);
   const paidTotal = useMemo(() => inFolder.reduce((t, f) => t + (Number(f.amount) || 0), 0), [inFolder]);
   const canStatements = me?.finance === "full";
   const blocked = folder === "statement" && me != null && !canStatements;
@@ -158,8 +159,8 @@ export default function ProjectFilesPage() {
         </div>
       </div>
 
-      <div className="flex gap-2">
-        {(["client_boq", "statement"] as FileFolder[]).map((k) => (
+      <div className="flex flex-wrap gap-2">
+        {(["client_boq", "drawing", "statement"] as FileFolder[]).map((k) => (
           <button key={k} onClick={() => { setSp({ folder: k }, { replace: true }); setPicked([]); setMsg(null); }}
             className={`${btn} ${folder === k ? "bg-cyan-600 text-white" : "border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300"}`}>
             {FOLDER_WORDS[k].icon} {FOLDER_WORDS[k].title} <span className="opacity-70">({counts[k]})</span>

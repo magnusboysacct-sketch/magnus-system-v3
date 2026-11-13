@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -239,6 +239,113 @@ Deno.serve(async (req) => {
             ? "Receipt scanning is switched off for your company."
             : "The AI assistant is switched off for your company.",
       }, featuresError ? 503 : 403);
+    }
+
+    // ── 🤖 Project Reader: read a project's drawings / BOQ / contract (migration 20261006000000) ─────────────────────
+    // The files are fetched HERE from the private bucket (never sent by the browser), only files of the caller's own
+    // company and of this project, from the "Client BOQ" and "Drawings & contract" folders. Excel / CSV are turned into
+    // text here (exact numbers, cheaper); PDFs and pictures go to Claude as they are. The result is saved with the project.
+    if (action === "read_project") {
+      const projectId = String(body.projectId || "");
+      const fileIds: string[] = Array.isArray(body.fileIds) ? body.fileIds.map(String).slice(0, 12) : [];
+      const question = typeof body.question === "string" ? body.question.trim().slice(0, 1500) : "";
+      if (!projectId || fileIds.length === 0) throw new Error("Pick the project and at least one file.");
+
+      const { data: project } = await supabaseAdmin.from("projects").select("id, name, company_id").eq("id", projectId).maybeSingle();
+      if (!project || project.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Project not found." }, 404);
+      const { data: files } = await supabaseAdmin.from("project_files")
+        .select("id, file_name, file_path, mime_type, folder").in("id", fileIds)
+        .eq("project_id", projectId).eq("company_id", profile.company_id).in("folder", ["client_boq", "drawing"]);
+      if (!files || files.length === 0) throw new Error("Those files were not found in this project.");
+
+      const toB64 = (u8: Uint8Array) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
+      const blocks: any[] = [];
+      const notes: string[] = [];
+      let total = 0;
+      let textBudget = 150_000;
+      for (const f of files) {
+        if (!String(f.file_path).startsWith(`${profile.company_id}/`)) { notes.push(`${f.file_name}: skipped (not this company's file).`); continue; }
+        const name = String(f.file_name || "file");
+        const ext = (name.split(".").pop() || "").toLowerCase();
+        const { data: blob, error: dlErr } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (dlErr || !blob) { notes.push(`${name}: could not be opened.`); continue; }
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        total += buf.length;
+        if (total > 28 * 1024 * 1024) { notes.push(`${name}: skipped (too much at once; read fewer or smaller files).`); continue; }
+        if (ext === "pdf") {
+          blocks.push({ type: "text", text: `=== FILE: ${name} (${f.folder === "drawing" ? "drawing / contract" : "BOQ"}) ===` });
+          blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: toB64(buf) } });
+        } else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
+          blocks.push({ type: "text", text: `=== FILE: ${name} (picture) ===` });
+          blocks.push({ type: "image", source: { type: "base64", media_type: ext === "jpg" ? "image/jpeg" : `image/${ext}`, data: toB64(buf) } });
+        } else if (["xlsx", "xls", "csv"].includes(ext)) {
+          try {
+            const XLSX = await import("npm:xlsx@0.18.5");
+            const wb = XLSX.read(buf, { type: "array" });
+            let text = "";
+            for (const sn of wb.SheetNames.slice(0, 20)) {
+              const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+                .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+              if (csv) text += `\n--- SHEET: ${sn} ---\n${csv}\n`;
+            }
+            if (text.length > textBudget) { notes.push(`${name}: very long, only the first part was read.`); text = text.slice(0, textBudget); }
+            textBudget -= text.length;
+            blocks.push({ type: "text", text: `=== FILE: ${name} (spreadsheet, as CSV: one line per row) ===\n${text}` });
+          } catch (_e) { notes.push(`${name}: the spreadsheet could not be read.`); }
+        } else {
+          notes.push(`${name}: this kind of file can't be read yet (save Word or HEIC files as PDF or JPG).`);
+        }
+      }
+      if (blocks.length === 0) throw new Error(notes.join(" ") || "Nothing could be read.");
+
+      const READ_PROMPT = `You are an experienced Jamaican construction estimator and quantity surveyor working for ${intro}.
+Above are the documents of one project ("${String(project.name).replace(/"/g, "'")}"): drawings, a BOQ / bill of quantities, a contract or scope. Read ALL of them carefully.
+Explain the job in plain, simple English (the reader is a builder, not an office person; short sentences; this text may be read out loud).
+Then CHECK the documents against each other like a careful QS would:
+- quantities in the BOQ that don't match what the drawing shows (show the drawing figure and your working, in the units used);
+- typos or impossible values (e.g. a thickness that is 10 times too big);
+- items with a rate but no quantity, or a quantity but no rate, and anything that looks missing for what the drawing shows;
+- names, places, dates, totals that don't agree between the documents; sums that don't add up;
+- risks or things to ask the client before pricing or starting.
+Only say what the documents show; when you are not sure, say so. Money: keep the currency of the document (JMD unless it says otherwise).
+${question ? `\nThe user also asks: "${question.replace(/"/g, "'")}" — answer it in "answer".` : ""}
+Return ONLY valid JSON, no other text:
+{
+  "title": "short name of the job",
+  "summary": "3 to 6 short paragraphs in plain words: what is being built, where, how big, main materials and methods, total value if shown",
+  "job": { "client": "", "location": "", "date": "", "total": "", "currency": "" },
+  "scope": ["main pieces of work, in order of building"],
+  "key_facts": [ { "label": "e.g. Building size", "value": "e.g. 16'-0\\" x 12'-0\\" (about 17.8 m2)", "source": "which file / sheet / drawing" } ],
+  "checks": [ { "level": "problem | warning | info", "text": "what is wrong or worth checking, with the numbers", "where": "file / page / item" } ],
+  "questions": ["questions to ask the client or engineer"],
+  "answer": ${question ? `"the answer to the user's question"` : `""`}
+}`;
+
+      const rr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 8000, messages: [{ role: "user", content: [...blocks, { type: "text", text: READ_PROMPT }] }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!rr.ok) {
+        const t = await rr.text();
+        console.error("Claude API error (read_project):", rr.status, t);
+        throw new Error(rr.status === 413 || /too large|too long|maximum/i.test(t) ? "The files are too big to read at once. Pick fewer files (or a smaller PDF)." : `The AI could not read the files (error ${rr.status}).`);
+      }
+      const cj = await rr.json();
+      const raw = (cj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      let result: any;
+      try { const m = raw.match(/\{[\s\S]*\}/); result = JSON.parse(m ? m[0] : raw); }
+      catch (_e) { result = { title: project.name, summary: raw, checks: [], questions: [], key_facts: [], scope: [] }; }
+      if (notes.length) result.file_notes = notes;
+      result.usage = cj.usage || null;
+
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: projectId, file_ids: files.map((f: any) => f.id), file_names: files.map((f: any) => f.file_name),
+        question: question || null, result, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, result } }, 200);
     }
 
     let messages: any[] = [];

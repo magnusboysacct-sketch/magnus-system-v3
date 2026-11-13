@@ -577,6 +577,8 @@ export default function ProjectDashboardPage() {
     // the two folders for papers the client gives (ProjectFilesPage)
     {label:"Client BOQ",icon:<FolderOpen size={15}/>,to:`/projects/${projectId}/files?folder=client_boq`,color:"text-sky-400",bg:"bg-sky-500/10",border:"border-sky-500/20",desc:"The client's BOQ files"},
     {label:"Statements",icon:<FolderOpen size={15}/>,to:`/projects/${projectId}/files?folder=statement`,color:"text-lime-500",bg:"bg-lime-500/10",border:"border-lime-500/20",desc:"Payment statements"},
+    {label:"Drawings",icon:<FolderOpen size={15}/>,to:`/projects/${projectId}/files?folder=drawing`,color:"text-indigo-400",bg:"bg-indigo-500/10",border:"border-indigo-500/20",desc:"Drawings & contract"},
+    {label:"🤖 Project Reader",icon:<FolderOpen size={15}/>,to:`/projects/${projectId}/reader`,color:"text-violet-400",bg:"bg-violet-500/10",border:"border-violet-500/20",desc:"AI reads the drawings & BOQ"},
   ];
 
   const TABS:[{key:Tab;label:string;count?:number}] =[

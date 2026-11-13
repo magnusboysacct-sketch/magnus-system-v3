@@ -4,7 +4,7 @@
 import { supabase } from "./supabase";
 import { openLater } from "./fileLinks";
 
-export type FileFolder = "client_boq" | "statement";
+export type FileFolder = "client_boq" | "statement" | "drawing";   // drawing: "Drawings & contract" (migration 20261006000000)
 export interface ProjectFile {
   id: string; company_id: string; project_id: string; folder: FileFolder; file_name: string; file_path: string;
   mime_type: string | null; size_bytes: number | null; doc_date: string | null; amount: number | null; note: string | null;
@@ -13,6 +13,7 @@ export interface ProjectFile {
 export const FOLDER_WORDS: Record<FileFolder, { title: string; icon: string; hint: string }> = {
   client_boq: { title: "Client BOQ", icon: "📄", hint: "The BOQ or estimate the client gives you (PDF, picture, Excel or Word)." },
   statement: { title: "Statements", icon: "💵", hint: "The client's payment statements. Add the date and amount of each payment." },
+  drawing: { title: "Drawings & contract", icon: "📐", hint: "Drawings, the contract, the scope letter or specification (PDF or picture). The 🤖 Project Reader reads these with the Client BOQ." },
 };
 export const MAX_FILE_MB = 10;
 const ALLOWED = /\.(pdf|jpe?g|png|webp|heic|heif|xlsx|xls|docx|doc|csv)$/i;
@@ -40,7 +41,9 @@ export async function addProjectFile(o: { companyId: string; projectId: string; 
   const safe = o.file.name.replace(/[^\w.\- ]+/g, "_").slice(-120);
   const path = o.folder === "client_boq"
     ? `${o.companyId}/project-files/${o.projectId}/client-boq/${Date.now()}_${safe}`
-    : `${o.companyId}/finance/project-statements/${o.projectId}/${Date.now()}_${safe}`;
+    : o.folder === "drawing"
+      ? `${o.companyId}/project-files/${o.projectId}/drawings/${Date.now()}_${safe}`
+      : `${o.companyId}/finance/project-statements/${o.projectId}/${Date.now()}_${safe}`;
   const contentType = mimeFor(o.file);
   const { error: upErr } = await supabase.storage.from("private-files").upload(path, o.file, { contentType, upsert: false });
   if (upErr) throw new Error(`${o.file.name}: ${upErr.message}`);
