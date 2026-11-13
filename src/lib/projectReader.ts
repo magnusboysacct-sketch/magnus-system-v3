@@ -284,3 +284,17 @@ export async function addTasksToMilestone(projectId: string, milestoneId: string
   if (error) throw new Error(error.message);
   return rows.length;
 }
+
+// ── 🔁 What changed between an old and a new version ───────────────────────────────────────────────────────────────
+export interface CompareChange { kind?: string; area?: string; item?: string; old?: string; new?: string; money?: number; note?: string }
+export interface CompareResult { kind: "compare"; summary?: string; currency?: string; old_total?: number; new_total?: number; changes?: CompareChange[]; actions?: string[]; unchanged?: string; old_files?: string[]; new_files?: string[]; file_notes?: string[] }
+export const isCompare = (r: SavedRead) => (r.result as unknown as { kind?: string })?.kind === "compare";
+export async function compareFiles(projectId: string, oldIds: string[], newIds: string[]): Promise<{ id: string | null; created_at: string | null; result: CompareResult }> {
+  return callAI({ action: "compare_files", projectId, oldIds, newIds });
+}
+export function compareSpeech(c: CompareResult): string {
+  const parts = [c.summary || ""];
+  for (const x of (c.changes || []).slice(0, 25)) parts.push(`${x.kind || "changed"}: ${x.item || ""}${x.old ? `, was ${x.old}` : ""}${x.new ? `, now ${x.new}` : ""}. ${x.note || ""}`);
+  if (c.actions?.length) parts.push(`What to do: ${c.actions.join(". ")}`);
+  return parts.join("\n");
+}

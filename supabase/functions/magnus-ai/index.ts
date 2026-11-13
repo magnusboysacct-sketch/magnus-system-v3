@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms" || action === "material_list" || action === "milestone_tasks") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms" || action === "material_list" || action === "milestone_tasks" || action === "compare_files") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -811,6 +811,102 @@ Return ONLY valid JSON:
         question: "Milestone tasks", result: plan, created_by: callerId,
       }).select("id, created_at").maybeSingle();
       return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, plan } }, 200);
+    }
+
+    // ── 🔁 What changed: compare an OLD and a NEW version of a project's drawings / BOQ (Project Reader) ────────────────
+    // Only this company's files of this project, from the "Client BOQ" and "Drawings & contract" folders. Nothing is changed:
+    // the result is a list of the differences (and the money effect), saved with the project.
+    if (action === "compare_files") {
+      const projectId = String(body.projectId || "");
+      const oldIds: string[] = Array.isArray(body.oldIds) ? body.oldIds.map(String).slice(0, 4) : [];
+      const newIds: string[] = Array.isArray(body.newIds) ? body.newIds.map(String).slice(0, 4) : [];
+      if (!projectId || oldIds.length === 0 || newIds.length === 0) throw new Error("Pick at least one OLD and one NEW file.");
+      if (oldIds.some((id) => newIds.includes(id))) throw new Error("A file can't be both the old and the new version.");
+      const { data: project } = await supabaseAdmin.from("projects").select("id, name, company_id").eq("id", projectId).maybeSingle();
+      if (!project || project.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Project not found." }, 404);
+      const { data: files } = await supabaseAdmin.from("project_files")
+        .select("id, file_name, file_path, folder, created_at").in("id", [...oldIds, ...newIds])
+        .eq("project_id", projectId).eq("company_id", profile.company_id).in("folder", ["client_boq", "drawing"]);
+      const toB64 = (u8: Uint8Array) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
+      const blocks: any[] = [];
+      const notes: string[] = [];
+      let total = 0;
+      let textBudget = 140_000;
+      for (const side of ["OLD", "NEW"] as const) {
+        const ids = side === "OLD" ? oldIds : newIds;
+        const list = (files || []).filter((f: any) => ids.includes(f.id));
+        if (list.length === 0) throw new Error(`The ${side.toLowerCase()} file(s) were not found in this project.`);
+        for (const f of list) {
+          if (!String(f.file_path).startsWith(`${profile.company_id}/`)) { notes.push(`${f.file_name}: skipped.`); continue; }
+          const name = String(f.file_name || "file");
+          const ext = (name.split(".").pop() || "").toLowerCase();
+          const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+          if (!blob) { notes.push(`${name}: could not be opened.`); continue; }
+          const buf = new Uint8Array(await blob.arrayBuffer());
+          total += buf.length;
+          if (total > 28 * 1024 * 1024) { notes.push(`${name}: skipped (too much at once).`); continue; }
+          const label = `=== ${side} VERSION · FILE: ${name} (uploaded ${String(f.created_at).slice(0, 10)}) ===`;
+          if (ext === "pdf") {
+            blocks.push({ type: "text", text: label });
+            blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: toB64(buf) } });
+          } else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
+            blocks.push({ type: "text", text: label });
+            blocks.push({ type: "image", source: { type: "base64", media_type: ext === "jpg" ? "image/jpeg" : `image/${ext}`, data: toB64(buf) } });
+          } else if (["xlsx", "xls", "csv"].includes(ext)) {
+            try {
+              const XLSX = await import("npm:xlsx@0.18.5");
+              const wb = XLSX.read(buf, { type: "array" });
+              let text = "";
+              for (const sn of wb.SheetNames.slice(0, 20)) {
+                const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+                  .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+                if (csv) text += `\n--- SHEET: ${sn} ---\n${csv}\n`;
+              }
+              const cap = Math.floor(textBudget / 2);
+              if (text.length > cap) { notes.push(`${name}: very long, only the first part was compared.`); text = text.slice(0, cap); }
+              blocks.push({ type: "text", text: `${label}\n(spreadsheet as CSV)\n${text}` });
+            } catch (_e) { notes.push(`${name}: the spreadsheet could not be read.`); }
+          } else notes.push(`${name}: this kind of file can't be compared (save it as PDF, a picture or Excel).`);
+        }
+      }
+      if (!blocks.some((b) => b.text?.startsWith("=== OLD")) || !blocks.some((b) => b.text?.startsWith("=== NEW"))) throw new Error(notes.join(" ") || "Both versions are needed.");
+      const CMP_PROMPT = `You are an experienced Jamaican quantity surveyor working for ${intro}.
+Above are the OLD and the NEW version of documents for the project "${String(project.name).replace(/"/g, "'")}" (drawings and/or BOQ).
+Compare them carefully and list EVERYTHING that changed from OLD to NEW:
+- BOQ: items added, removed, or with a different quantity, unit, rate or amount (give old and new values); section and grand totals;
+- drawings: sizes, levels, rooms, doors / windows, roof, structure (beams, columns, steel), finishes, notes, revision boxes;
+- anything else (client, dates, scope wording).
+Say what each change means for the job and the money (more work = a variation to claim; less work = a deduction).
+Plain, simple English (the reader is a builder). Only say what the documents show; if something is unclear, say so.
+Return ONLY valid JSON:
+{ "summary": "2 to 4 short sentences: what changed overall and the money effect",
+  "currency": "JMD", "old_total": 0, "new_total": 0,
+  "changes": [ { "kind": "added | removed | changed", "area": "e.g. Roof / BOQ section 3 / Drawing A-2", "item": "what", "old": "old value or blank", "new": "new value or blank", "money": 0, "note": "what it means" } ],
+  "actions": ["what to do now, e.g. update the BOQ item 3.2, ask the client to approve a variation, re-order steel"],
+  "unchanged": "one line on what stayed the same" }
+"money" = the change in amount for that line (new minus old; negative when it goes down; 0 when not known). Totals 0 when not shown.`;
+      const cr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 10000, messages: [{ role: "user", content: [...blocks, { type: "text", text: CMP_PROMPT }] }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!cr.ok) {
+        const t = await cr.text(); console.error("Claude API error (compare_files):", cr.status, t);
+        throw new Error(cr.status === 413 || /too large|too long|maximum/i.test(t) ? "The files are too big to compare at once. Pick fewer or smaller files." : `The AI could not compare the files (error ${cr.status}).`);
+      }
+      const cj = await cr.json();
+      const raw = (cj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      let result: any;
+      try { const m = raw.match(/\{[\s\S]*\}/); result = JSON.parse(m ? m[0] : raw); } catch (_e) { result = { summary: raw, changes: [], actions: [] }; }
+      const nameOf = (ids: string[]) => (files || []).filter((f: any) => ids.includes(f.id)).map((f: any) => f.file_name);
+      result.kind = "compare"; result.old_files = nameOf(oldIds); result.new_files = nameOf(newIds);
+      if (notes.length) result.file_notes = notes;
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: projectId, file_ids: [...oldIds, ...newIds], file_names: [...result.old_files, ...result.new_files],
+        question: "What changed", result, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, result } }, 200);
     }
 
     let messages: any[] = [];

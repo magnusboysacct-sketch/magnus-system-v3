@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { askProject, createBoqFromDraft, createContractFromTerms, createPoFromMaterials, isMaterialList, isMilestoneTasks, suggestMilestoneTasks, addTasksToMilestone, addWorkDays, nextWorkDay, type MilestoneTasks, makeMaterialList, type MaterialList, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { askProject, createBoqFromDraft, createContractFromTerms, createPoFromMaterials, isMaterialList, isMilestoneTasks, suggestMilestoneTasks, compareFiles, compareSpeech, isCompare, type CompareResult, addTasksToMilestone, addWorkDays, nextWorkDay, type MilestoneTasks, makeMaterialList, type MaterialList, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -65,7 +65,7 @@ export default function ProjectReaderPage() {
         setFiles(usable);
         setChosen((c) => (c.size ? c : new Set(usable.filter(readable).map((f) => f.id))));
         setReads(rd);
-        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r)) ?? null);
+        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r) && !isCompare(r)) ?? null);
       } catch (e) { if (alive) setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); }
     })();
     return () => { alive = false; };
@@ -271,11 +271,14 @@ export default function ProjectReaderPage() {
         </div>
       )}
 
+      <CompareBox files={files} projectId={projectId} saved={reads.filter(isCompare)}
+        onSaved={(r) => setReads((rs) => [r, ...rs])} onRemove={(r) => void remove(r)} />
+
       {/* earlier readings */}
-      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r)) && (
+      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r) && !isCompare(r)) && (
         <div className={`${card} p-4 space-y-2`}>
           <div className="font-semibold text-slate-800 dark:text-slate-100">Earlier readings</div>
-          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r)).map((r) => (
+          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r) && !isCompare(r)).map((r) => (
             <div key={r.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${shown?.id === r.id ? "bg-violet-50 dark:bg-violet-500/10" : "bg-slate-50 dark:bg-white/[0.03]"}`}>
               <button onClick={() => { stop(); setShown(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-w-0 flex-1 text-left">
                 <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{r.result?.title || "Reading"}{r.question ? ` · "${r.question}"` : ""}</div>
@@ -958,6 +961,114 @@ function TasksEditor({ plan, projectId }: { plan: MilestoneTasks; projectId: str
       {(plan.notes?.length || 0) > 0 && <ul className="list-disc pl-5 text-xs text-slate-600 dark:text-slate-400">{plan.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>}
       {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}
         {msg.ok && <button onClick={() => nav(`/projects/${projectId}`)} className="ml-2 font-bold underline">Open the project →</button>}</div>}
+    </div>
+  );
+}
+
+// ── 🔁 What changed (old version vs new version) ─────────────────────────────────────────────────────────────────────
+function CompareBox({ files, projectId, saved, onSaved, onRemove }: {
+  files: ProjectFile[]; projectId: string; saved: SavedRead[]; onSaved: (r: SavedRead) => void; onRemove: (r: SavedRead) => void;
+}) {
+  const [side, setSide] = useState<Record<string, "old" | "new">>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [talking, setTalking] = useState(false);
+  const usable = files.filter(readable);
+  const oldIds = Object.keys(side).filter((k) => side[k] === "old");
+  const newIds = Object.keys(side).filter((k) => side[k] === "new");
+  const pick = (id: string, v: "old" | "new") => setSide((s) => { const n = { ...s }; if (n[id] === v) delete n[id]; else n[id] = v; return n; });
+  const shown = saved.find((r) => r.id === openId) || saved[0];
+
+  async function run() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await compareFiles(projectId, oldIds, newIds);
+      const row: SavedRead = { id: r.id || `tmp${Date.now()}`, created_at: r.created_at || new Date().toISOString(), file_names: [...(r.result.old_files || []), ...(r.result.new_files || [])], question: "What changed", result: r.result as unknown as ReadResult };
+      onSaved(row); setOpenId(row.id); setSide({});
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not compare."); }
+    setBusy(false);
+  }
+  function say(c: CompareResult) {
+    if (talking) { try { window.speechSynthesis?.cancel(); } catch { /* fine */ } setTalking(false); return; }
+    setTalking(true); speakAll(compareSpeech(c), () => setTalking(false));
+  }
+  const money = (n: number | undefined) => (Number(n) ? `${n! > 0 ? "+" : ""}${Math.round(n!).toLocaleString()}` : "");
+
+  return (
+    <div className="rounded-xl border-2 border-violet-200 dark:border-violet-500/30 p-3 space-y-3">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">🔁 What changed? (old version → new version)</div>
+      <p className="text-sm text-slate-600 dark:text-slate-400">When the client sends a revised drawing or BOQ, upload it above, then mark the old file(s) <b>OLD</b> and the new one(s) <b>NEW</b>. Nothing in the project is changed.</p>
+      {usable.length < 2 ? <div className="text-sm text-slate-500">Upload both versions first (at least 2 files).</div> : (
+        <div className="divide-y divide-slate-100 dark:divide-white/[0.05] rounded-lg border border-slate-200 dark:border-white/[0.08]">
+          {usable.map((f) => (
+            <div key={f.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+              <div className="min-w-0 flex-1 truncate text-slate-800 dark:text-slate-200">{f.file_name}<span className="ml-1 text-[11px] text-slate-500">· {f.created_at.slice(0, 10)}</span></div>
+              {(["old", "new"] as const).map((v) => (
+                <button key={v} onClick={() => pick(f.id, v)}
+                  className={`rounded-md px-2 py-1 text-xs font-bold ${side[f.id] === v ? (v === "old" ? "bg-slate-700 text-white" : "bg-violet-600 text-white") : "bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300"}`}>{v.toUpperCase()}</button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {busy ? (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-violet-400 bg-violet-50 px-3 py-3 text-sm font-bold text-violet-900">
+          <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-violet-300 border-t-violet-700" />Comparing… (up to 2 minutes)
+        </div>
+      ) : (
+        <button onClick={() => void run()} disabled={oldIds.length === 0 || newIds.length === 0} className={`${btn} bg-violet-600 hover:bg-violet-500 text-white`}>
+          🔁 Compare {oldIds.length} old with {newIds.length} new</button>
+      )}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+
+      {shown && (() => {
+        const c = shown.result as unknown as CompareResult;
+        const diff = (Number(c.new_total) || 0) - (Number(c.old_total) || 0);
+        return (
+          <div className="space-y-2 rounded-lg bg-violet-50/60 dark:bg-violet-500/[0.06] p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1 text-[11px] text-slate-500">{new Date(shown.created_at).toLocaleString()} · OLD: {(c.old_files || []).join(", ")} → NEW: {(c.new_files || []).join(", ")}</div>
+              <button onClick={() => say(c)} className={`${btn} min-h-[32px] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/[0.1]`}>{talking ? "⏹ Stop" : "🔊 Listen"}</button>
+            </div>
+            {c.summary && <p className="whitespace-pre-wrap text-slate-800 dark:text-slate-200">{c.summary}</p>}
+            {(Number(c.old_total) > 0 || Number(c.new_total) > 0) && (
+              <div className="font-semibold text-slate-800 dark:text-slate-200">Total: {Math.round(Number(c.old_total) || 0).toLocaleString()} → {Math.round(Number(c.new_total) || 0).toLocaleString()} {c.currency || "JMD"}
+                <span className={diff > 0 ? "text-green-700" : diff < 0 ? "text-red-700" : ""}> ({money(diff) || "no change"})</span></div>
+            )}
+            <div className="divide-y divide-violet-100 dark:divide-white/[0.05]">
+              {(c.changes || []).map((x, i) => (
+                <div key={i} className="py-1.5">
+                  <div className="flex items-start gap-2">
+                    <span className={`mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${x.kind === "added" ? "bg-green-100 text-green-800" : x.kind === "removed" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{x.kind || "changed"}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">{x.item}{x.area && <span className="font-normal text-slate-500"> · {x.area}</span>}</div>
+                      {(x.old || x.new) && <div className="text-xs text-slate-600 dark:text-slate-400">{x.old && <span className="line-through">{x.old}</span>}{x.old && x.new && " → "}{x.new && <b>{x.new}</b>}</div>}
+                      {x.note && <div className="text-xs text-slate-500">{x.note}</div>}
+                    </div>
+                    {money(x.money) && <span className={`text-xs font-bold ${Number(x.money) > 0 ? "text-green-700" : "text-red-700"}`}>{money(x.money)}</span>}
+                  </div>
+                </div>
+              ))}
+              {(c.changes || []).length === 0 && <div className="py-1 text-slate-500">No changes found.</div>}
+            </div>
+            {(c.actions?.length || 0) > 0 && <div><div className="text-xs font-bold text-slate-700 dark:text-slate-300">What to do now</div><ul className="list-disc pl-5 text-slate-800 dark:text-slate-200">{c.actions!.map((a, i) => <li key={i}>{a}</li>)}</ul></div>}
+            {c.unchanged && <div className="text-xs text-slate-500">Same as before: {c.unchanged}</div>}
+            {(c.file_notes?.length || 0) > 0 && <div className="text-xs text-amber-700">{c.file_notes!.join(" ")}</div>}
+          </div>
+        );
+      })()}
+      {saved.length > 1 && (
+        <div className="flex flex-wrap gap-1 text-xs">
+          <span className="text-slate-500">Earlier comparisons:</span>
+          {saved.map((r) => (
+            <span key={r.id} className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${r.id === shown?.id ? "bg-violet-600 text-white" : "bg-slate-100 dark:bg-white/[0.06] text-slate-700 dark:text-slate-300"}`}>
+              <button onClick={() => setOpenId(r.id)}>{new Date(r.created_at).toLocaleDateString()}</button>
+              <button onClick={() => onRemove(r)} title="Remove" className="opacity-70">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
