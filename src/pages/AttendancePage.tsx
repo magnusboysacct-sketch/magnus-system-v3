@@ -51,6 +51,8 @@ export default function AttendancePage() {
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [view, setView] = useState<"day" | "diary" | "approve">("day");
+  // Today: only who is on the clock now (finished / approved ones one tap away). Another day: everyone.
+  const [show, setShow] = useState<"auto" | "open" | "done" | "all">("auto");
   const [media, setMedia] = useState<MediaRow[]>([]);
   const [photoFor, setPhotoFor] = useState<StaffShift | null>(null);     // a supervisor adding a work picture for this person
   const workRef = useRef<HTMLInputElement>(null);
@@ -134,6 +136,8 @@ export default function AttendancePage() {
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not clock out." }); }
   }
 
+  const showMode = show === "auto" ? (day === todayLocal() ? "open" : "all") : show;
+  const visible = shifts.filter((s) => showMode === "all" || (showMode === "open" ? s.status === "open" : s.status !== "open"));
   const minutesOf = (s: StaffShift) => s.status === "open" ? Math.max(0, Math.floor((now - new Date(s.clock_in_at).getTime()) / 60000)) : (s.minutes_worked || 0);
   const stats = useMemo(() => ({
     onSite: shifts.filter((s) => s.status === "open").length,
@@ -194,11 +198,25 @@ export default function AttendancePage() {
         ].map(([l, v]) => <div key={l} className={`${card} p-3`}><div className="text-xs text-slate-500">{l}</div><div className="text-lg font-bold text-slate-900 dark:text-slate-100">{v}</div></div>)}
       </div>
 
+      {(() => {
+        const mode = showMode;
+        const nOpen = shifts.filter((s) => s.status === "open").length, nDone = shifts.length - nOpen;
+        return shifts.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {([["open", `🟢 On the clock (${nOpen})`], ["done", `Finished (${nDone})`], ["all", `All (${shifts.length})`]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setShow(k)}
+                className={`${btn} ${mode === k ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900" : "border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300"}`}>{l}</button>
+            ))}
+          </div>
+        );
+      })()}
       {loading ? <div className="text-sm text-slate-500">Loading…</div> : shifts.length === 0 ? (
         <div className={`${card} p-6 text-center text-sm text-slate-500`}>Nobody clocked in on this day.</div>
       ) : (
         <div className="space-y-2">
-          {shifts.map((s) => {
+          {visible.length === 0 && <div className={`${card} p-6 text-center text-sm text-slate-500`}>
+            {showMode === "open" ? `Nobody is on the clock now. ${shifts.length} finished: tap "Finished" to see them, or "✅ Approve & pay" to approve.` : "None here."}</div>}
+          {visible.map((s) => {
             const inMap = mapLink(s.in_lat, s.in_lng), outMap = mapLink(s.out_lat, s.out_lng);
             const far = s.flags.includes("in_far") || s.flags.includes("out_far") || s.flags.includes("left_site");
             return (
