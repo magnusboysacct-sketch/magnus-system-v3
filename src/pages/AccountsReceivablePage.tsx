@@ -108,6 +108,8 @@ export default function AccountsReceivablePage() {
   const [sendClient, setSendClient] = useState<any>(null);
   // Advance payments: money received for a project before any invoice exists (client_payments with project_id, no invoice_id).
   const [advances, setAdvances] = useState<ClientPayment[]>([]);
+  // what was already used from each advance, and on which invoice ("Received X · used Y on INV-1 · left Z")
+  const [advUsed, setAdvUsed] = useState<Record<string, { amount: number; invoice: string }[]>>({});
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
   const [savingAdvance, setSavingAdvance] = useState(false);
   const [advanceError, setAdvanceError] = useState("");
@@ -473,7 +475,18 @@ export default function AccountsReceivablePage() {
 
   async function loadAdvances() {
     try {
-      setAdvances(await fetchUnappliedAdvances({ companyId: companyId || undefined }));
+      const list = await fetchUnappliedAdvances({ companyId: companyId || undefined });
+      setAdvances(list);
+      const used: Record<string, { amount: number; invoice: string }[]> = {};
+      if (list.length) {
+        const { supabase } = await import("../lib/supabase");
+        const { data } = await supabase.from("client_payments").select("amount, applied_from_payment_id, client_invoices(invoice_number)")
+          .in("applied_from_payment_id", list.map((a) => a.id));
+        ((data || []) as unknown as { amount: number; applied_from_payment_id: string; client_invoices: { invoice_number: string } | null }[]).forEach((r) => {
+          (used[r.applied_from_payment_id] ||= []).push({ amount: Number(r.amount) || 0, invoice: r.client_invoices?.invoice_number || "an invoice" });
+        });
+      }
+      setAdvUsed(used);
     } catch (error) {
       console.error("Error loading advance payments:", error);
     }
@@ -918,9 +931,18 @@ export default function AccountsReceivablePage() {
                     <div className="text-xs text-slate-500 dark:text-slate-400 capitalize">
                       {a.payment_date} · {String(a.payment_method).replace("_", " ")}{a.reference_number ? ` - ${a.reference_number}` : ""}
                     </div>
+                    {(advUsed[a.id]?.length || 0) > 0 && (() => {
+                      const usedSum = advUsed[a.id].reduce((t, u) => t + u.amount, 0);
+                      return (
+                        <div className="text-xs text-amber-800 dark:text-amber-300">
+                          Received {fmtAdvance(usedSum + Number(a.amount))} · used {advUsed[a.id].map((u) => `${fmtAdvance(u.amount)} on ${u.invoice}`).join(", ")} · <b>{fmtAdvance(Number(a.amount))} left</b>
+                          <span className="block text-slate-500 dark:text-slate-400">The client paid more than that invoice owed. Put what is left on their next invoice (or add work to that invoice with ✏️ Lines), or refund it.</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="font-semibold text-slate-900 dark:text-slate-100">{fmtAdvance(Number(a.amount))}</div>
+                    <div className="text-right"><div className="font-semibold text-slate-900 dark:text-slate-100">{fmtAdvance(Number(a.amount))}</div>{(advUsed[a.id]?.length || 0) > 0 && <div className="text-[10px] text-slate-500">left</div>}</div>
                     <button type="button" onClick={() => openApply(a)}
                       className="rounded-lg border border-amber-300 dark:border-amber-500/40 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/10">
                       Apply to invoice
