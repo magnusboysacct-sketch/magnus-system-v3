@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms" || action === "material_list") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones" || action === "draft_boq" || action === "match_boq" || action === "ask_project" || action === "contract_terms" || action === "material_list" || action === "milestone_tasks") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -735,6 +735,82 @@ Return ONLY valid JSON:
         question: "Materials list", result: list, created_by: callerId,
       }).select("id, created_at").maybeSingle();
       return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, list } }, 200);
+    }
+
+    // ── 🔨 Tasks for each milestone (Project Reader) ───────────────────────────────────────────────────────────────────
+    // Reads the project's milestones (this company only) and the reading + BOQ, and suggests the site tasks for each.
+    // Nothing is created here: the app shows them to check, then adds the ticked ones to the milestones.
+    if (action === "milestone_tasks") {
+      const readId = String(body.readId || "");
+      const { data: rd } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, project_id, file_ids, result").eq("id", readId).maybeSingle();
+      if (!rd || rd.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Reading not found." }, 404);
+      const { data: ms } = await supabaseAdmin.from("project_milestones")
+        .select("id, milestone_no, milestone_name, description, planned_start_date, planned_end_date, planned_labour_cost, planned_material_cost")
+        .eq("project_id", rd.project_id).eq("company_id", profile.company_id).order("milestone_no", { ascending: true }).limit(40);
+      if (!ms || ms.length === 0) throw new Error("This project has no milestones yet. Make them first (📅 Milestones above), then come back.");
+      const { data: have } = await supabaseAdmin.from("project_tasks").select("milestone_id, task_name").eq("project_id", rd.project_id).in("milestone_id", ms.map((m: any) => m.id));
+      const { data: files } = await supabaseAdmin.from("project_files").select("id, file_name, file_path").in("id", rd.file_ids || []).eq("company_id", profile.company_id);
+      let sheets = "";
+      for (const f of files || []) {
+        if (!/\.(xlsx|xls|csv)$/i.test(String(f.file_name)) || !String(f.file_path).startsWith(`${profile.company_id}/`)) continue;
+        const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (!blob) continue;
+        try {
+          const XLSX = await import("npm:xlsx@0.18.5");
+          const wb = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: "array" });
+          for (const sn of wb.SheetNames.slice(0, 20)) {
+            const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+              .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+            if (csv) sheets += `\n--- ${f.file_name} / SHEET: ${sn} ---\n${csv}\n`;
+          }
+        } catch (_e) { /* skip */ }
+        if (sheets.length > 100_000) { sheets = sheets.slice(0, 100_000); break; }
+      }
+      const msText = ms.map((m: any) => {
+        const t = (have || []).filter((h: any) => h.milestone_id === m.id).map((h: any) => h.task_name);
+        return `- id ${m.id} | #${m.milestone_no ?? ""} ${m.milestone_name} | ${m.description || ""} | ${m.planned_start_date || "?"} to ${m.planned_end_date || "?"}${t.length ? ` | ALREADY HAS TASKS: ${t.slice(0, 30).join("; ")}` : ""}`;
+      }).join("\n");
+      const TASK_PROMPT = `You are an experienced Jamaican construction site foreman working for ${intro}.
+What was read from the job's documents (JSON): ${JSON.stringify(rd.result).slice(0, 20_000)}
+${sheets ? `The job's BOQ spreadsheet(s), exact, as CSV:\n${sheets}` : "(No spreadsheet BOQ.)"}
+
+The project's MILESTONES:
+${msText}
+
+For EACH milestone, list the site TASKS a crew does, in the order they are done (usually 3 to 10 per milestone). Take the
+work and quantities from the BOQ items that belong to that milestone. Do not repeat tasks a milestone ALREADY HAS.
+For each task give:
+- "name" (short, e.g. "Excavate foundation trench"), "description" (one sentence, which BOQ item(s) it comes from);
+- "trade": ONE of General Labour, Mason, Carpenter, Painter, Electrician, Plumber, Steel Fixer, Tiler, Welder, Equipment Operator, Driver, Landscaping, Other;
+- "qty" and "unit" from the BOQ (unit one of m², m³, m, no., bag, block, ton, kg, L, hr, day, ls - use "ls" with qty 1 for a lump sum);
+- "crew": a realistic number of workers; "per_day": how much ONE worker does in a day, in the same unit (so days = qty / (crew x per_day));
+  for a lump sum give per_day so the days come out realistic (e.g. qty 1, crew 2, per_day 0.25 = 2 days);
+- "boq_labour_rate": the BOQ's labour rate per unit for that item if the BOQ shows one, else 0 (this is the CLIENT's price, not the worker's pay).
+Return ONLY valid JSON:
+{ "milestones": [ { "milestone_id": "the id above", "tasks": [ { "name": "", "description": "", "trade": "Mason", "qty": 0, "unit": "m²", "crew": 2, "per_day": 10, "boq_labour_rate": 0 } ] } ],
+  "notes": ["anything to know: work that did not fit any milestone, guesses to check"] }`;
+      const tr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 12000, messages: [{ role: "user", content: TASK_PROMPT }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!tr.ok) { const t = await tr.text(); console.error("Claude API error (milestone_tasks):", tr.status, t); throw new Error(`The AI could not make the tasks (error ${tr.status}).`); }
+      const tj = await tr.json();
+      const raw = (tj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      let plan: any;
+      try { const m = raw.match(/\{[\s\S]*\}/); plan = JSON.parse(m ? m[0] : raw); } catch (_e) { throw new Error("The tasks could not be read. Try again."); }
+      const ids = new Set(ms.map((m: any) => m.id));
+      plan.milestones = (Array.isArray(plan.milestones) ? plan.milestones : []).filter((m: any) => ids.has(m?.milestone_id)).map((m: any) => {
+        const src = ms.find((x: any) => x.id === m.milestone_id);
+        return { ...m, name: src?.milestone_name || "", start: src?.planned_start_date || null, end: src?.planned_end_date || null };
+      });
+      plan.kind = "milestone_tasks"; plan.from_read = rd.id;
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: rd.project_id, file_ids: rd.file_ids || [], file_names: [],
+        question: "Milestone tasks", result: plan, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, plan } }, 200);
     }
 
     let messages: any[] = [];

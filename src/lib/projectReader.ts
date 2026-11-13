@@ -249,3 +249,38 @@ export async function createPoFromMaterials(projectId: string, companyId: string
   }
   return po_number;
 }
+
+// ── 🔨 Tasks for each milestone ───────────────────────────────────────────────────────────────────────────────────
+export interface SuggestedTask { name: string; description?: string; trade?: string; qty: number; unit?: string; crew: number; per_day: number; boq_labour_rate?: number }
+export interface MilestoneTasks { kind: "milestone_tasks"; from_read: string; milestones: { milestone_id: string; name: string; start: string | null; end: string | null; tasks: SuggestedTask[] }[]; notes?: string[] }
+export const isMilestoneTasks = (r: SavedRead) => (r.result as unknown as { kind?: string })?.kind === "milestone_tasks";
+export async function suggestMilestoneTasks(readId: string): Promise<{ id: string | null; created_at: string | null; plan: MilestoneTasks }> {
+  return callAI({ action: "milestone_tasks", readId });
+}
+// Working days from a start date (Sundays skipped). Returns the end date of a job of `days` days.
+function addWorkDays(start: string, days: number): string {
+  const d = new Date(`${start}T12:00:00`);
+  let left = Math.max(1, Math.ceil(days - 1e-9));
+  while (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  while (--left > 0) { d.setDate(d.getDate() + 1); if (d.getDay() === 0) d.setDate(d.getDate() + 1); }
+  return d.toISOString().slice(0, 10);
+}
+export function nextWorkDay(date: string): string {
+  const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + 1); if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+export { addWorkDays };
+// Adds the tasks to one milestone (status planned). Dates are given by the caller (may be null).
+export async function addTasksToMilestone(projectId: string, milestoneId: string, tasks: {
+  name: string; description: string; trade: string; qty: number; unit: string; crew: number; per_day: number; worker_rate: number | null; start: string | null; end: string | null;
+}[]): Promise<number> {
+  const rows = tasks.map((t) => ({
+    project_id: projectId, milestone_id: milestoneId, task_name: t.name.trim().slice(0, 200), task_description: t.description.trim() || null,
+    trade_type: t.trade || "General Labour", quantity: t.qty > 0 ? t.qty : 1, unit: t.unit || "ls", crew_size: t.crew > 0 ? t.crew : 1,
+    production_rate_per_day: t.per_day > 0 ? t.per_day : 1, rate_per_unit: t.worker_rate, start_date: t.start, end_date: t.end, status: "planned", percent_complete: 0,
+  }));
+  if (rows.length === 0) return 0;
+  const { error } = await supabase.from("project_tasks").insert(rows);
+  if (error) throw new Error(error.message);
+  return rows.length;
+}

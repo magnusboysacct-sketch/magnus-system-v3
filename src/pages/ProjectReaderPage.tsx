@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { askProject, createBoqFromDraft, createContractFromTerms, createPoFromMaterials, isMaterialList, makeMaterialList, type MaterialList, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { askProject, createBoqFromDraft, createContractFromTerms, createPoFromMaterials, isMaterialList, isMilestoneTasks, suggestMilestoneTasks, addTasksToMilestone, addWorkDays, nextWorkDay, type MilestoneTasks, makeMaterialList, type MaterialList, createMilestones, deleteRead, draftBoq, isBoqDraft, isContractTerms, isPlan, readContractTerms, type ContractTerms, listReads, matchBoq, planMilestones, readProjectFiles, speechText, type BoqDraft, type DraftItem, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -65,7 +65,7 @@ export default function ProjectReaderPage() {
         setFiles(usable);
         setChosen((c) => (c.size ? c : new Set(usable.filter(readable).map((f) => f.id))));
         setReads(rd);
-        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r)) ?? null);
+        setShown((s) => s ?? rd.find((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r)) ?? null);
       } catch (e) { if (alive) setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); }
     })();
     return () => { alive = false; };
@@ -249,6 +249,11 @@ export default function ProjectReaderPage() {
               onPlanned={(p) => setReads((rs) => [p, ...rs])} />
           )}
           {shown.id && !shown.id.startsWith("tmp") && (
+            <TasksPanel read={shown} projectId={projectId}
+              plan={reads.find((r) => isMilestoneTasks(r) && (r.result as unknown as MilestoneTasks).from_read === shown.id)}
+              onPlan={(p) => setReads((rs) => [p, ...rs])} />
+          )}
+          {shown.id && !shown.id.startsWith("tmp") && (
             <BoqDraftPanel read={shown} projectId={projectId} companyId={project?.company_id || null}
               draft={reads.find((r) => isBoqDraft(r) && (r.result as unknown as BoqDraft).from_read === shown.id)}
               onDraft={(d) => setReads((rs) => [d, ...rs.filter((x) => x.id !== d.id)])} />
@@ -267,10 +272,10 @@ export default function ProjectReaderPage() {
       )}
 
       {/* earlier readings */}
-      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r)) && (
+      {reads.some((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r)) && (
         <div className={`${card} p-4 space-y-2`}>
           <div className="font-semibold text-slate-800 dark:text-slate-100">Earlier readings</div>
-          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r)).map((r) => (
+          {reads.filter((r) => !isPlan(r) && !isBoqDraft(r) && !isContractTerms(r) && !isMaterialList(r) && !isMilestoneTasks(r)).map((r) => (
             <div key={r.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${shown?.id === r.id ? "bg-violet-50 dark:bg-violet-500/10" : "bg-slate-50 dark:bg-white/[0.03]"}`}>
               <button onClick={() => { stop(); setShown(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-w-0 flex-1 text-left">
                 <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{r.result?.title || "Reading"}{r.question ? ` · "${r.question}"` : ""}</div>
@@ -834,6 +839,125 @@ function MaterialsEditor({ list, projectId, companyId }: { list: MaterialList; p
       {(list.notes?.length || 0) > 0 && <ul className="list-disc pl-5 text-xs text-slate-600 dark:text-slate-400">{list.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>}
       {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}
         {msg.ok && <button onClick={() => nav(`/projects/${projectId}/procurement`)} className="ml-2 font-bold underline">Open Procurement →</button>}</div>}
+    </div>
+  );
+}
+
+// ── 🔨 Tasks for each milestone ───────────────────────────────────────────────────────────────────────────────────────
+const TRADES = ["General Labour", "Mason", "Carpenter", "Painter", "Electrician", "Plumber", "Steel Fixer", "Tiler", "Welder", "Equipment Operator", "Driver", "Landscaping", "Other"];
+function TasksPanel({ read, plan, projectId, onPlan }: { read: SavedRead; plan: SavedRead | undefined; projectId: string; onPlan: (p: SavedRead) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function make() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await suggestMilestoneTasks(read.id);
+      onPlan({ id: r.id || `tmp${Date.now()}`, created_at: r.created_at || new Date().toISOString(), file_names: [], question: "Milestone tasks", result: r.plan as unknown as ReadResult });
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not make the tasks."); }
+    setBusy(false);
+  }
+  return (
+    <div className="rounded-xl border-2 border-sky-200 dark:border-sky-500/30 p-3 space-y-3">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">🔨 Tasks for each milestone</div>
+      {!plan && <p className="text-sm text-slate-600 dark:text-slate-400">Uses the project's milestones (make them first) and the BOQ to list the site tasks in each one, with the trade, quantity, crew and days. Tasks a milestone already has are not repeated.</p>}
+      {busy ? (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-sky-400 bg-sky-50 px-3 py-3 text-sm font-bold text-sky-900">
+          <span className="h-5 w-5 animate-spin rounded-full border-[3px] border-sky-300 border-t-sky-700" />Working out the tasks… (up to 2 minutes)
+        </div>
+      ) : <button onClick={() => void make()} className={`${btn} bg-sky-600 hover:bg-sky-500 text-white`}>{plan ? "↻ Work out the tasks again" : "🔨 Work out the tasks"}</button>}
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {plan && <TasksEditor key={plan.id} plan={plan.result as unknown as MilestoneTasks} projectId={projectId} />}
+    </div>
+  );
+}
+
+function TasksEditor({ plan, projectId }: { plan: MilestoneTasks; projectId: string }) {
+  const nav = useNavigate();
+  const [rows, setRows] = useState(() => (plan.milestones || []).flatMap((m) => (m.tasks || []).map((t, i) => ({
+    key: `${m.milestone_id}:${i}`, ms: m.milestone_id, on: true, name: t.name || "", description: t.description || "", trade: TRADES.includes(t.trade || "") ? t.trade! : "General Labour",
+    qty: String(t.qty ?? 1), unit: t.unit || "ls", crew: String(t.crew || 1), per_day: String(t.per_day || 1), rate: "", hint: Number(t.boq_labour_rate) || 0,
+  }))));
+  const [done, setDone] = useState<Record<string, number>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const set = (key: string, k: string, v: string | boolean) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, [k]: v } : r)));
+  const days = (r: (typeof rows)[number]) => { const q = Number(r.qty) || 0, c = Number(r.crew) || 0, p = Number(r.per_day) || 0; return q > 0 && c > 0 && p > 0 ? q / (c * p) : 0; };
+
+  async function add(msId: string) {
+    const m = plan.milestones.find((x) => x.milestone_id === msId);
+    const sel = rows.filter((r) => r.ms === msId && r.on && r.name.trim());
+    if (!m || sel.length === 0) { setMsg({ ok: false, text: "Tick at least one task." }); return; }
+    setBusy(msId); setMsg(null);
+    try {
+      // one after the other from the milestone's start date (Sundays skipped); no dates when the milestone has none
+      let at = m.start;
+      const list = sel.map((r) => {
+        const d = Math.max(1, days(r));
+        const start = at, end = at ? addWorkDays(at, d) : null;
+        if (end) at = nextWorkDay(end);
+        return { name: r.name, description: r.description, trade: r.trade, qty: Number(r.qty) || 1, unit: r.unit, crew: Number(r.crew) || 1, per_day: Number(r.per_day) || 1,
+          worker_rate: r.rate.trim() ? Number(r.rate) || 0 : null, start, end };
+      });
+      const n = await addTasksToMilestone(projectId, msId, list);
+      setDone((x) => ({ ...x, [msId]: (x[msId] || 0) + n }));
+      setRows((rs) => rs.map((r) => (r.ms === msId && r.on ? { ...r, on: false } : r)));
+      const late = m.end && at && at > m.end;
+      setMsg({ ok: true, text: `✅ ${n} task${n === 1 ? "" : "s"} added to "${m.name}".${late ? ` ⚠ They run past the milestone's end date (${m.end}). Change the crew or the dates on the project page.` : ""}` });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not add the tasks." }); }
+    setBusy(null);
+  }
+
+  return (
+    <div className="space-y-3 text-sm">
+      {(plan.milestones || []).map((m) => {
+        const mr = rows.filter((r) => r.ms === m.milestone_id);
+        const ticked = mr.filter((r) => r.on).length;
+        const total = mr.filter((r) => r.on).reduce((t, r) => t + Math.max(1, Math.ceil(days(r))), 0);
+        return (
+          <details key={m.milestone_id} open className="rounded-lg border border-slate-200 dark:border-white/[0.08]">
+            <summary className="cursor-pointer px-3 py-2 font-semibold text-slate-800 dark:text-slate-200">{m.name}
+              <span className="font-normal text-slate-500"> · {mr.length} tasks · ticked about {total} work day{total === 1 ? "" : "s"}{m.start ? ` · from ${m.start}` : ""}{m.end ? ` to ${m.end}` : ""}</span>
+              {done[m.milestone_id] && <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-800">{done[m.milestone_id]} added</span>}</summary>
+            {mr.length === 0 && <div className="px-3 pb-2 text-xs text-slate-500">No new tasks suggested (it may already have them).</div>}
+            <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+              {mr.map((r) => (
+                <div key={r.key} className={`space-y-1 px-3 py-2 ${r.on ? "" : "opacity-60"}`}>
+                  <div className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-2 h-4 w-4" checked={r.on} onChange={(e) => set(r.key, "on", e.target.checked)} />
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <input value={r.name} onChange={(e) => set(r.key, "name", e.target.value)} className={`${input} w-full py-1 font-semibold`} />
+                      {r.description && <div className="text-[11px] text-slate-500">{r.description}</div>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pl-6 sm:grid-cols-6">
+                    <label className="text-[10px] text-slate-500 sm:col-span-2">Trade<select value={r.trade} onChange={(e) => set(r.key, "trade", e.target.value)} className={`${input} block w-full py-1`}>{TRADES.map((t) => <option key={t}>{t}</option>)}</select></label>
+                    <label className="text-[10px] text-slate-500">Qty<input type="number" inputMode="decimal" value={r.qty} onChange={(e) => set(r.key, "qty", e.target.value)} className={`${input} block w-full py-1`} /></label>
+                    <label className="text-[10px] text-slate-500">Unit<input value={r.unit} onChange={(e) => set(r.key, "unit", e.target.value)} className={`${input} block w-full py-1`} /></label>
+                    <label className="text-[10px] text-slate-500">Crew<input type="number" inputMode="numeric" value={r.crew} onChange={(e) => set(r.key, "crew", e.target.value)} className={`${input} block w-full py-1`} /></label>
+                    <label className="text-[10px] text-slate-500">Per worker / day<input type="number" inputMode="decimal" value={r.per_day} onChange={(e) => set(r.key, "per_day", e.target.value)} className={`${input} block w-full py-1`} /></label>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2 pl-6 text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">≈ {Math.max(1, Math.ceil(days(r)))} day{Math.ceil(days(r)) > 1 ? "s" : ""}</span>
+                    <label>Worker's rate per {r.unit || "unit"} (optional)<input type="number" inputMode="decimal" value={r.rate} onChange={(e) => set(r.key, "rate", e.target.value)} placeholder="blank" className={`${input} ml-1 w-24 py-1`} /></label>
+                    {r.hint > 0 && <span>BOQ labour (client price): {r.hint.toLocaleString()} / {r.unit}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {mr.length > 0 && (
+              <div className="border-t border-slate-200 dark:border-white/[0.08] p-2">
+                <button onClick={() => void add(m.milestone_id)} disabled={busy !== null || ticked === 0} className={`${btn} bg-sky-600 hover:bg-sky-500 text-white`}>
+                  {busy === m.milestone_id ? "Adding…" : `➕ Add ${ticked} task${ticked === 1 ? "" : "s"} to this milestone`}</button>
+              </div>
+            )}
+          </details>
+        );
+      })}
+      {(plan.milestones || []).length === 0 && <div className="text-sm text-slate-500">No milestones matched. Make the milestones first, then work out the tasks again.</div>}
+      <div className="text-[11px] text-slate-500">Days = quantity ÷ (crew × per worker per day). Dates run one task after another from the milestone's start, Sundays skipped.</div>
+      {(plan.notes?.length || 0) > 0 && <ul className="list-disc pl-5 text-xs text-slate-600 dark:text-slate-400">{plan.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+      {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}
+        {msg.ok && <button onClick={() => nav(`/projects/${projectId}`)} className="ml-2 font-bold underline">Open the project →</button>}</div>}
     </div>
   );
 }
