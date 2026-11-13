@@ -305,6 +305,7 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
   const left = workers.filter((w) => !taken.has(w.id));
 
   async function goMany() {
+   try {
     const ids = picked.filter((id) => !taken.has(id));
     if (!projectId || ids.length === 0) { setErr("Pick the project and tick the workers."); return; }
     setErr(null); setOk(null);
@@ -326,6 +327,7 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
     setErr([bad.length ? `NOT clocked in: ${bad.join("; ")}` : "",
       noLoc && good.length ? "The phone did not give its location, so they are marked \"no location\". Allow Location for this site to fix that next time." : "",
       far != null ? `Your phone is ${distanceWords(far)} from the site, so they are marked "away from site".` : ""].filter(Boolean).join(" ") || null);
+   } catch (e) { setBusy(null); setErr(`Something went wrong: ${e instanceof Error ? e.message : String(e)}`); console.error("clock in crew", e); }
   }
 
   async function go(file: File | null) {
@@ -349,12 +351,13 @@ function CrewModal({ companyId, projects, workers, busyIds, onClose }: { company
         !fix ? "The phone did not give its location (marked \"no location\"). Allow Location for this site to fix that next time." : "",
         photoLost ? "The photo did not save (weak signal?), but the clock in did." : ""].filter(Boolean).join(" ") || null);
       setWorkerId("");
-    } catch (e) { setErr(e instanceof Error ? e.message : "Could not clock in."); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not clock in."); console.error("clock in", e); }
     finally { setBusy(null); }
   }
 
   return (
     <Shell title="Clock in crew" onClose={onClose}>
+      <div className="text-[11px] text-slate-500">{open.length} projects · {left.length} workers to clock in · {busyIds.length} already in</div>
       <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; if (f) void go(f); }} />
       <p className="text-sm text-slate-600 dark:text-slate-400">For workers with no smartphone. Your phone's location is used, so stand on the site. Take a photo of each worker.</p>
       <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={`${input} w-full`}>

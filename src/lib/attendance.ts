@@ -289,9 +289,18 @@ export async function setRadius(projectId: string, radius: number): Promise<void
   const { error } = await supabase.rpc("attendance_set_radius", { p_project: projectId, p_radius: radius });
   if (error) throw new Error(error.message);
 }
+// A server call that never answers used to leave the screen stuck. After `ms` it gives up with a message that says so.
+export function withTimeout<T>(p: PromiseLike<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what}: the server did not answer in ${Math.round(ms / 1000)} seconds. Check the internet, then log out and log in again.`)), ms);
+    Promise.resolve(p).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 export async function staffClockIn(workerId: string, projectId: string, fix: Fix | null, photoPath: string | null): Promise<ClockResult> {
-  const { data, error } = await supabase.rpc("attendance_staff_clock_in", { p_worker: workerId, p_project: projectId, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: photoPath });
-  if (error) throw new Error(error.message);
+  const { data, error } = await withTimeout(
+    supabase.rpc("attendance_staff_clock_in", { p_worker: workerId, p_project: projectId, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null, p_photo_path: photoPath }),
+    25000, "Clock in");
+  if (error) { console.error("attendance_staff_clock_in", error); throw new Error(`${error.message}${error.code ? ` (code ${error.code})` : ""}`); }
   return data as ClockResult;
 }
 export async function staffClockOut(shiftId: string, fix: Fix | null, note?: string): Promise<void> {
