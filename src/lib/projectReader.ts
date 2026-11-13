@@ -55,3 +55,45 @@ export function speechText(r: ReadResult): string {
     .replace(/(\d+)'-(\d+)"/g, "$1 feet $2 inches").replace(/(\d+)'/g, "$1 feet").replace(/(\d+)"/g, "$1 inches")
     .replace(/\bm2\b/g, "square metres").replace(/\bm3\b/g, "cubic metres").replace(/\bJMD\b/g, "Jamaican dollars");
 }
+
+// ── 🗓 Step 2: milestones from a reading ─────────────────────────────────────────────────────────────────────────────
+export interface PlanMilestone { name: string; description?: string; boq_sections?: string; weeks?: number; material?: number; labour?: number; payment?: number; money_note?: string }
+export interface MilestonePlan { kind: "milestones"; from_read: string; currency?: string; boq_total?: number; milestones: PlanMilestone[]; total_weeks?: number; notes?: string[]; note?: string | null }
+
+async function callAI<T>(payload: Record<string, unknown>): Promise<T> {
+  await requireFeature("ai");
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/magnus-ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || "" },
+    body: JSON.stringify(payload),
+  });
+  let j: { success?: boolean; error?: string; data?: T } = {};
+  try { j = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok || !j.success || !j.data) {
+    throw new Error(j.error || (res.status === 546 || res.status === 504 ? "It took too long. Try again." : `The AI did not answer (error ${res.status}).`));
+  }
+  return j.data;
+}
+
+export async function planMilestones(readId: string, note: string): Promise<{ id: string | null; created_at: string | null; plan: MilestonePlan }> {
+  return callAI({ action: "plan_milestones", readId, note });
+}
+
+export const isPlan = (r: SavedRead) => (r.result as unknown as { kind?: string })?.kind === "milestones";
+
+export interface NewMilestone { name: string; description: string; start: string | null; end: string | null; material: number; labour: number; payment: number }
+// Adds them after the project's existing milestones (milestone_no carries on). Returns how many were made.
+export async function createMilestones(projectId: string, companyId: string, list: NewMilestone[]): Promise<number> {
+  const { data: have, error: e1 } = await supabase.from("project_milestones").select("milestone_no").eq("project_id", projectId);
+  if (e1) throw new Error(e1.message);
+  let no = Math.max(0, ...((have || []) as { milestone_no: number | null }[]).map((m) => Number(m.milestone_no || 0))) + 1;
+  const rows = list.map((m) => ({
+    project_id: projectId, company_id: companyId, milestone_name: m.name.trim().slice(0, 200), description: m.description.trim() || null, status: "planned",
+    planned_start_date: m.start, planned_end_date: m.end, planned_labour_cost: Math.round(m.labour * 100) / 100,
+    planned_material_cost: Math.round(m.material * 100) / 100, planned_equipment_cost: 0, payment_amount: Math.round(m.payment * 100) / 100, milestone_no: no++,
+  }));
+  const { error } = await supabase.from("project_milestones").insert(rows);
+  if (error) throw new Error(error.message);
+  return rows.length;
+}

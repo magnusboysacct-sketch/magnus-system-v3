@@ -5,8 +5,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { todayLocal } from "../lib/jamaica";
 import { addProjectFile, fileProblem, listProjectFiles, type FileFolder, type ProjectFile } from "../lib/projectFiles";
-import { deleteRead, listReads, readProjectFiles, speechText, type ReadResult, type SavedRead } from "../lib/projectReader";
+import { createMilestones, deleteRead, isPlan, listReads, planMilestones, readProjectFiles, speechText, type MilestonePlan, type ReadResult, type SavedRead } from "../lib/projectReader";
 
 const card = "rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03]";
 const btn = "min-h-[40px] rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50";
@@ -64,7 +65,7 @@ export default function ProjectReaderPage() {
         setFiles(usable);
         setChosen((c) => (c.size ? c : new Set(usable.filter(readable).map((f) => f.id))));
         setReads(rd);
-        setShown((s) => s ?? rd[0] ?? null);
+        setShown((s) => s ?? rd.find((r) => !isPlan(r)) ?? null);
       } catch (e) { if (alive) setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not load." }); }
     })();
     return () => { alive = false; };
@@ -239,14 +240,20 @@ export default function ProjectReaderPage() {
           )}
 
           {(res.file_notes?.length || 0) > 0 && <div className="text-xs text-amber-700">{res.file_notes!.join(" ")}</div>}
+
+          {shown.id && !shown.id.startsWith("tmp") && (
+            <MilestonePlanner read={shown} projectId={projectId} companyId={project?.company_id || null}
+              plan={reads.find((r) => isPlan(r) && (r.result as unknown as MilestonePlan).from_read === shown.id)}
+              onPlanned={(p) => setReads((rs) => [p, ...rs])} />
+          )}
         </div>
       )}
 
       {/* earlier readings */}
-      {reads.length > 0 && (
+      {reads.some((r) => !isPlan(r)) && (
         <div className={`${card} p-4 space-y-2`}>
           <div className="font-semibold text-slate-800 dark:text-slate-100">Earlier readings</div>
-          {reads.map((r) => (
+          {reads.filter((r) => !isPlan(r)).map((r) => (
             <div key={r.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${shown?.id === r.id ? "bg-violet-50 dark:bg-violet-500/10" : "bg-slate-50 dark:bg-white/[0.03]"}`}>
               <button onClick={() => { stop(); setShown(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-w-0 flex-1 text-left">
                 <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{r.result?.title || "Reading"}{r.question ? ` · "${r.question}"` : ""}</div>
@@ -257,6 +264,120 @@ export default function ProjectReaderPage() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 🗓 Step 2: milestones from this reading ───────────────────────────────────────────────────────────────────────────
+const addDays = (iso: string, n: number) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const money = (n: number, cur = "JMD") => `${cur} ${Math.round(n).toLocaleString()}`;
+
+function MilestonePlanner({ read, plan, projectId, companyId, onPlanned }: {
+  read: SavedRead; plan: SavedRead | undefined; projectId: string; companyId: string | null; onPlanned: (p: SavedRead) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function suggest() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await planMilestones(read.id, note);
+      onPlanned({ id: r.id || `tmp${Date.now()}`, created_at: r.created_at || new Date().toISOString(), file_names: [], question: "Milestone plan", result: r.plan as unknown as ReadResult });
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not make the plan."); }
+    setBusy(false);
+  }
+  return (
+    <div className="rounded-xl border-2 border-indigo-200 dark:border-indigo-500/30 p-3 space-y-3">
+      <div className="font-semibold text-slate-800 dark:text-slate-100">🗓 Milestones from this reading</div>
+      {!plan && <p className="text-sm text-slate-600 dark:text-slate-400">Claude groups the work into milestones in building order, with the time each takes and the money from the BOQ. You check it, change anything, then create them.</p>}
+      <div className="flex flex-wrap gap-2">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional: e.g. crew of 6, start 1 December, finish in 8 weeks" className={`${input} min-w-0 flex-1`} />
+        <button onClick={() => void suggest()} disabled={busy} className={`${btn} bg-indigo-600 hover:bg-indigo-500 text-white`}>
+          {busy ? "Planning… (up to a minute)" : plan ? "↻ Plan again" : "🗓 Suggest milestones"}
+        </button>
+      </div>
+      {err && <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>}
+      {plan && <PlanEditor key={plan.id} plan={plan.result as unknown as MilestonePlan} projectId={projectId} companyId={companyId} />}
+    </div>
+  );
+}
+
+function PlanEditor({ plan, projectId, companyId }: { plan: MilestonePlan; projectId: string; companyId: string | null }) {
+  const cur = plan.currency || "JMD";
+  const [rows, setRows] = useState(() => (plan.milestones || []).map((m) => ({
+    on: true, name: m.name || "", description: [m.description, m.boq_sections ? `BOQ: ${m.boq_sections}` : ""].filter(Boolean).join(" "),
+    weeks: String(m.weeks ?? 1), material: String(Math.round(Number(m.material) || 0)), labour: String(Math.round(Number(m.labour) || 0)),
+    payment: String(Math.round(Number(m.payment) || ((Number(m.material) || 0) + (Number(m.labour) || 0)))), note: m.money_note || "",
+  })));
+  const [start, setStart] = useState(todayLocal);
+  const [have, setHave] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    void supabase.from("project_milestones").select("id", { count: "exact", head: true }).eq("project_id", projectId).then(({ count }) => setHave(count ?? 0));
+  }, [projectId]);
+  const set = (i: number, k: string, v: string | boolean) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  // dates one after the other, from the start date, for the ticked ones
+  const dated = rows.reduce<{ list: { start: string | null; end: string | null }[]; next: string }>((acc, r) => {
+    if (!r.on || !acc.next) return { list: [...acc.list, { start: null, end: null }], next: acc.next };
+    const days = Math.max(1, Math.round((Number(r.weeks) || 0) * 7));
+    return { list: [...acc.list, { start: acc.next, end: addDays(acc.next, days - 1) }], next: addDays(acc.next, days) };
+  }, { list: [], next: start }).list;
+  const ticked = rows.filter((r) => r.on);
+  const sumPay = ticked.reduce((t, r) => t + (Number(r.payment) || 0), 0);
+  const sumCost = ticked.reduce((t, r) => t + (Number(r.material) || 0) + (Number(r.labour) || 0), 0);
+  const boq = Number(plan.boq_total) || 0;
+
+  async function create() {
+    if (!companyId) { setMsg({ ok: false, text: "The project is still loading. Try again." }); return; }
+    const list = rows.map((r, i) => ({ r, d: dated[i] })).filter(({ r }) => r.on);
+    if (list.length === 0) { setMsg({ ok: false, text: "Tick at least one milestone." }); return; }
+    if (list.some(({ r }) => !r.name.trim())) { setMsg({ ok: false, text: "Every milestone needs a name." }); return; }
+    if (have && !window.confirm(`This project already has ${have} milestone${have === 1 ? "" : "s"}. Add these ${list.length} after them?`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      const n = await createMilestones(projectId, companyId, list.map(({ r, d }) => ({
+        name: r.name, description: r.description, start: d.start, end: d.end,
+        material: Number(r.material) || 0, labour: Number(r.labour) || 0, payment: Number(r.payment) || 0,
+      })));
+      setHave((h) => (h || 0) + n);
+      setMsg({ ok: true, text: `✅ ${n} milestone${n === 1 ? "" : "s"} created. See them on the project page.` });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not create them." }); }
+    setBusy(false);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-end gap-3 text-sm">
+        <label className="text-xs text-slate-500">Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={`${input} mt-1 block`} /></label>
+        <div className="text-xs text-slate-600 dark:text-slate-400 pb-2">
+          {ticked.length} milestones · about {Math.round(ticked.reduce((t, r) => t + (Number(r.weeks) || 0), 0) * 10) / 10} weeks · cost {money(sumCost, cur)} · payments {money(sumPay, cur)}
+          {boq > 0 && <span className={Math.abs(sumCost - boq) > Math.max(1, boq * 0.005) ? " font-bold text-amber-700" : " text-green-700"}> · BOQ total {money(boq, cur)}{Math.abs(sumCost - boq) > Math.max(1, boq * 0.005) ? ` (differs by ${money(Math.abs(sumCost - boq), cur)})` : " ✓"}</span>}
+        </div>
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className={`rounded-lg border border-slate-200 dark:border-white/[0.08] p-2 space-y-1.5 ${r.on ? "" : "opacity-50"}`}>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" className="h-5 w-5" checked={r.on} onChange={(e) => set(i, "on", e.target.checked)} />
+            <span className="text-xs text-slate-400 w-5">{i + 1}</span>
+            <input value={r.name} onChange={(e) => set(i, "name", e.target.value)} className={`${input} min-w-0 flex-1 font-semibold`} />
+          </div>
+          <textarea value={r.description} onChange={(e) => set(i, "description", e.target.value)} rows={2} className={`${input} w-full text-xs`} />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <label className="text-[10px] text-slate-500">Weeks<input type="number" inputMode="decimal" step="0.5" value={r.weeks} onChange={(e) => set(i, "weeks", e.target.value)} className={`${input} w-full`} /></label>
+            <label className="text-[10px] text-slate-500">Material ({cur})<input type="number" inputMode="decimal" value={r.material} onChange={(e) => set(i, "material", e.target.value)} className={`${input} w-full`} /></label>
+            <label className="text-[10px] text-slate-500">Labour ({cur})<input type="number" inputMode="decimal" value={r.labour} onChange={(e) => set(i, "labour", e.target.value)} className={`${input} w-full`} /></label>
+            <label className="text-[10px] text-slate-500">Payment to claim ({cur})<input type="number" inputMode="decimal" value={r.payment} onChange={(e) => set(i, "payment", e.target.value)} className={`${input} w-full`} /></label>
+          </div>
+          <div className="text-[11px] text-slate-500">{dated[i].start ? `${dated[i].start} → ${dated[i].end}` : "Not included"}{r.note ? ` · ${r.note}` : ""}</div>
+        </div>
+      ))}
+      {(plan.notes?.length || 0) > 0 && <ul className="list-disc pl-5 text-xs text-slate-600 dark:text-slate-400">{plan.notes!.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+      {msg && <div className={`rounded-lg border px-3 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}</div>}
+      <button onClick={() => void create()} disabled={busy} className={`${btn} w-full min-h-[48px] bg-green-600 hover:bg-green-500 text-white`}>
+        {busy ? "Creating…" : `✅ Create ${ticked.length} milestone${ticked.length === 1 ? "" : "s"}`}
+      </button>
+      <p className="text-[11px] text-slate-500">Money comes from the BOQ as Claude grouped it: check it against the BOQ before you rely on it. The dates follow each other from the start date; change them later on the project page.</p>
     </div>
   );
 }

@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
     // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
     let intro = companyIntro("");
-    if (action === "suggest_payment" || action === "chat" || action === "read_project") {
+    if (action === "suggest_payment" || action === "chat" || action === "read_project" || action === "plan_milestones") {
       try {
         const { data: cs } = await supabaseAdmin
           .from("company_settings")
@@ -346,6 +346,76 @@ Return ONLY valid JSON, no other text:
       }).select("id, created_at").maybeSingle();
 
       return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, result } }, 200);
+    }
+
+    // ── 🗓 Milestones from a saved Project Reader reading (step 2) ─────────────────────────────────────────────────────
+    // Uses the reading (already paid for) plus the BOQ spreadsheets of that reading as exact text (cheap). Drawings / PDFs
+    // are NOT sent again: the reading already has what they show. Nothing is created here: the app shows the plan to edit.
+    if (action === "plan_milestones") {
+      const readId = String(body.readId || "");
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 800) : "";
+      const { data: rd } = await supabaseAdmin.from("project_ai_reads").select("id, company_id, project_id, file_ids, result").eq("id", readId).maybeSingle();
+      if (!rd || rd.company_id !== profile.company_id) return jsonResponse({ success: false, error: "Reading not found." }, 404);
+      const { data: project } = await supabaseAdmin.from("projects").select("id, name").eq("id", rd.project_id).maybeSingle();
+      const { data: files } = await supabaseAdmin.from("project_files").select("id, file_name, file_path")
+        .in("id", rd.file_ids || []).eq("company_id", profile.company_id);
+      let sheets = "";
+      for (const f of files || []) {
+        if (!/\.(xlsx|xls|csv)$/i.test(String(f.file_name)) || !String(f.file_path).startsWith(`${profile.company_id}/`)) continue;
+        const { data: blob } = await supabaseAdmin.storage.from("private-files").download(f.file_path);
+        if (!blob) continue;
+        try {
+          const XLSX = await import("npm:xlsx@0.18.5");
+          const wb = XLSX.read(new Uint8Array(await blob.arrayBuffer()), { type: "array" });
+          for (const sn of wb.SheetNames.slice(0, 20)) {
+            const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })
+              .split("\n").map((l: string) => l.replace(/,+$/, "")).filter((l: string) => l.replace(/[,\s]/g, "") !== "").join("\n");
+            if (csv) sheets += `\n--- ${f.file_name} / SHEET: ${sn} ---\n${csv}\n`;
+          }
+        } catch (_e) { /* skip a sheet that can't be read */ }
+        if (sheets.length > 150_000) { sheets = sheets.slice(0, 150_000); break; }
+      }
+      const PLAN_PROMPT = `You are an experienced Jamaican construction project manager working for ${intro}.
+Project: "${String(project?.name || "").replace(/"/g, "'")}".
+Here is what was read from the project's drawings, BOQ and contract (JSON):
+${JSON.stringify(rd.result).slice(0, 40_000)}
+${sheets ? `\nThe BOQ spreadsheet(s), exact, as CSV:\n${sheets}` : "\n(No spreadsheet BOQ: use the reading only, and leave money at 0 where it is not known.)"}
+${note ? `\nThe user adds: "${note.replace(/"/g, "'")}"` : ""}
+
+Plan the job as MILESTONES in the order the work is really built on site (e.g. site prep & substructure, superstructure walls,
+roof, finishes, plumbing & sanitary, electrical, painting, handover) - group BOQ trades sensibly, usually 4 to 9 milestones.
+For each milestone give:
+- a short name, a one or two sentence description of the work in it, and which BOQ sections / pages it covers;
+- "weeks": a realistic duration in weeks for a small Jamaican crew (decimals allowed, e.g. 0.5);
+- "material" and "labour": the money for it FROM THE BOQ (sum of the material and labour of the items in it, in the BOQ's
+  currency). If the BOQ only shows one cost, put it in "material" and say so in "money_note". Never invent money: 0 if unknown;
+- "payment": what to claim from the client when it is done (normally material + labour of that milestone).
+Also give the BOQ grand total you used and whether your milestone money adds up to it.
+Return ONLY valid JSON:
+{
+  "currency": "JMD",
+  "boq_total": 0,
+  "milestones": [ { "name": "", "description": "", "boq_sections": "", "weeks": 1, "material": 0, "labour": 0, "payment": 0, "money_note": "" } ],
+  "total_weeks": 0,
+  "notes": ["anything the user should know: assumptions, money that did not fit, overlaps that can run together"]
+}`;
+      const pr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 6000, messages: [{ role: "user", content: PLAN_PROMPT }] }),
+      });
+      await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+      if (!pr.ok) { const t = await pr.text(); console.error("Claude API error (plan_milestones):", pr.status, t); throw new Error(`The AI could not make the plan (error ${pr.status}).`); }
+      const pj = await pr.json();
+      const raw = (pj.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      let plan: any;
+      try { const m = raw.match(/\{[\s\S]*\}/); plan = JSON.parse(m ? m[0] : raw); } catch (_e) { throw new Error("The AI's plan could not be read. Try again."); }
+      plan.kind = "milestones"; plan.from_read = rd.id; plan.note = note || null;
+      const { data: saved } = await supabaseAdmin.from("project_ai_reads").insert({
+        company_id: profile.company_id, project_id: rd.project_id, file_ids: rd.file_ids || [], file_names: [],
+        question: "Milestone plan", result: plan, created_by: callerId,
+      }).select("id, created_at").maybeSingle();
+      return jsonResponse({ success: true, data: { id: saved?.id || null, created_at: saved?.created_at || null, plan } }, 200);
     }
 
     let messages: any[] = [];
