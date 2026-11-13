@@ -2,9 +2,12 @@ import { StrictMode, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { installGlobalErrorReporting } from './lib/hq/reportError'
+import { installNetworkWatch } from './lib/netStatus'
 
 // App errors go to Magnus HQ (grouped, capped, no personal data).
 installGlobalErrorReporting()
+// "No internet" said plainly everywhere (lib/netStatus.ts)
+installNetworkWatch()
 
 // The public website (front page, pricing, legal pages, status, feedback) is a small separate bundle, so a visitor on a
 // cheap phone doesn't download the whole app. Signed-in people at "/" still get the app (and land on their dashboard).

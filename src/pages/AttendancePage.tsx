@@ -703,6 +703,21 @@ function ApproveView({ companyId }: { companyId: string }) {
     setBusy(false);
   }
   const [ask, setAsk] = useState<{ kind: "hours" | "reject"; s: PayShift } | null>(null);   // the reason box
+  // narrow the list: type a worker's name / number or a project, or pick a project
+  const [find, setFind] = useState("");
+  const [projFilter, setProjFilter] = useState("");
+  const projChoices = useMemo(() => {
+    const m = new Map<string, string>();
+    rows.forEach((r) => m.set(r.project_id || "", r.projects?.name || "No project"));
+    return Array.from(m.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [rows]);
+  const shownGroups = groups.filter((g) => {
+    if (projFilter && (g[0].project_id || "") !== projFilter) return false;
+    const q = find.trim().toLowerCase();
+    if (!q) return true;
+    const w = g[0].workers;
+    return `${wname(w)} ${w?.employee_id || ""} ${g[0].projects?.name || ""}`.toLowerCase().includes(q);
+  });
   function changeTime(s: PayShift, hours: string, note: string) {
     setAsk(null);
     const h = Number(hours);
@@ -734,10 +749,21 @@ function ApproveView({ companyId }: { companyId: string }) {
         </select>
         <span className="text-xs text-slate-500">Daily-rate workers: 5 hours or more on a day = a full day, less = a half day.</span>
       </div>
+      <div className="flex flex-wrap gap-2">
+        <input value={find} onChange={(e) => setFind(e.target.value)} placeholder="🔍 Search a worker or project…" className={`${input} min-w-0 flex-1`} />
+        <select value={projFilter} onChange={(e) => setProjFilter(e.target.value)} className={`${input} max-w-full`}>
+          <option value="">All projects</option>
+          {projChoices.map(([id, name]) => <option key={id || "none"} value={id}>{name}</option>)}
+        </select>
+        {(find || projFilter) && <button onClick={() => { setFind(""); setProjFilter(""); }} className={`${btn} border border-slate-200 dark:border-white/[0.1] text-slate-600 dark:text-slate-300`}>Clear</button>}
+      </div>
+      {(find || projFilter) && <div className="text-xs text-slate-500">Showing {shownGroups.length} of {groups.length}</div>}
       {msg && <div className={`rounded-lg border px-4 py-2 text-sm ${msg.ok ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>{msg.text}</div>}
       {loading ? <div className="text-sm text-slate-500">Loading…</div> : groups.length === 0 ? (
         <div className={`${card} p-6 text-center text-sm text-slate-500`}>Nothing waiting. Finished shifts show up here to approve and pay.</div>
-      ) : groups.map((g) => {
+      ) : shownGroups.length === 0 ? (
+        <div className={`${card} p-6 text-center text-sm text-slate-500`}>Nobody matches "{find || projChoices.find(([id]) => id === projFilter)?.[1]}".</div>
+      ) : shownGroups.map((g) => {
         const w = g[0].workers;
         const waiting = g.filter((s) => s.approval === "pending");
         const approved = g.filter((s) => s.approval === "approved");

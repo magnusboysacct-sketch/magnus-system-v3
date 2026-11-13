@@ -16,6 +16,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, usePa
 import ProjectUrlSync from "./components/ProjectUrlSync";
 import AppLayout from "./layout/AppLayout";
 import UpdateBanner from "./components/UpdateBanner";
+import NetBanner from "./components/NetBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectProvider, useProjectContext } from "./context/ProjectContext";
 import { useFinanceAccess } from "./hooks/useFinanceAccess";
@@ -299,6 +300,7 @@ export default function App() {
           <TrafficCounter />
           <ProjectUrlSync />
           <UpdateBanner />
+          <NetBanner />
           <MaintenanceGate>
           <Routes>
             {/* Public */}
